@@ -53,7 +53,7 @@ function delete_branch {
   # Confirmation prompt
   echo ""
  if [[ $num_branches -ge 1 ]]; then
-  printf "${RED}Warning!${RESET} ${YELLOW}You are about to delete branche(s):${RESET} ${PINK}%s${RESET}.\n" "${branches[*]}"
+  printf "${RED}Warning!${RESET} ${YELLOW}You are about to delete branch(es):${RESET} ${PINK}%s${RESET}.\n" "${branches[*]}"
   echo ""
   printf "${YELLOW}Type ${ITALIC}${GREEN}confirm${RESET}${YELLOW} to delete all listed branches, or ${ITALIC}q${RESET}${YELLOW} to quit:${RESET} "
   read -r user_input
