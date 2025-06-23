@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Output file
+# Create a temp file
+temp_output="$(mktemp)"
 output_file="code.md"
-> "$output_file"  # Clear or create the file
 
 # Declare an associative array mapping extensions to languages
 declare -A lang_map=(
@@ -20,8 +20,11 @@ find . -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.go" -o -name "*.cs" 
   ext="${filename##*.}"
   lang="${lang_map[$ext]:-text}"
 
-  echo "# $filename" >> "$output_file"
-  echo "+++$lang" >> "$output_file"
-  cat "$file" >> "$output_file"
-  echo -e "+++\n" >> "$output_file"
+  echo "# $filename" >> "$temp_output"
+  echo "+++$lang" >> "$temp_output"
+  cat "$file" >> "$temp_output"
+  echo -e "+++\n" >> "$temp_output"
 done
+
+# Move temp to final output (overwrite safely)
+mv "$temp_output" "$output_file"
