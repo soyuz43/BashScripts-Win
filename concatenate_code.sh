@@ -1,30 +1,32 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Create a temp file
-temp_output="$(mktemp)"
 output_file="code.md"
+temp_output="$(mktemp)"          # work in a scratch file first
 
-# Declare an associative array mapping extensions to languages
+# Map extensions → language identifiers
 declare -A lang_map=(
-  ["js"]="javascript"
-  ["jsx"]="javascript"
-  ["go"]="go"
-  ["cs"]="csharp"
-  ["md"]="markdown"
-  ["py"]="python"
+  [js]="javascript"  [jsx]="javascript"
+  [go]="go"          [cs]="csharp"
+  [md]="markdown"    [py]="python"
 )
 
-# Find and process files
-find . -type f \( -name "*.js" -o -name "*.jsx" -o -name "*.go" -o -name "*.cs" -o -name "*.md" -o -name "*.py" \) | while read -r file; do
-  filename=$(basename "$file")
-  ext="${filename##*.}"
+# Walk the tree, skipping the output file, and handle spaces safely (-print0 / read -d '')
+find . \
+  -type f \( -name "*.js"  -o -name "*.jsx" -o -name "*.go" \
+            -o -name "*.cs" -o -name "*.md"  -o -name "*.py" \) \
+  ! -name "$output_file" -print0 |
+while IFS= read -r -d '' file; do
+  relpath="${file#./}"                     # strip leading "./"
+  ext="${file##*.}"
   lang="${lang_map[$ext]:-text}"
 
-  echo "# $filename" >> "$temp_output"
-  echo "+++$lang" >> "$temp_output"
-  cat "$file" >> "$temp_output"
-  echo -e "+++\n" >> "$temp_output"
+  {
+    echo "# $relpath"
+    echo "+++$lang"
+    cat "$file"
+    echo -e "+++\n"
+  } >> "$temp_output"
 done
 
-# Move temp to final output (overwrite safely)
-mv "$temp_output" "$output_file"
+mv "$temp_output" "$output_file"          # atomically replace/overwrite
