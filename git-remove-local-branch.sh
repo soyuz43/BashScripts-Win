@@ -1,94 +1,159 @@
 #!/usr/bin/env bash
+# git-remove-local-branch.sh
+# Interactive local-branch cleanup (no remote deletion).
+# - Uses git date formatting (no `date -d`)
+# - Blocks protected branches
+# - Optional fzf multi-select
+# - Prompts to force delete if not fully merged
 
-# Enable extended globbing for better pattern matching
-shopt -s extglob
-
-# Define colors
-PINK='\033[1;35m'  # Bold Pink for branches other than main
-GREEN='\033[1;32m' # Bold Green for the main branch
-BOLD='\033[1m'
-ITALIC='\033[3m'
-RED='\033[1;31m'    # Bold Red for warnings
-RESET='\033[0m'
-BOLDYELLOW='\033[1;33m' # Bold Yellow
-YELLOW='\033[33m'  # Yellow for author names
-
-# Enable pipefail to catch errors in piped commands
 set -o pipefail
 
-function list_local_branches {
-  # Fetch branches with their creation dates and authors
-  local branches_with_info=$(git for-each-ref --sort=creatordate --format='%(refname:short) %(creatordate:short) %(authorname)' refs/heads/)
-  
-  # Find the maximum length of the branch names to align the output
-  local max_branch_length=$(echo "$branches_with_info" | awk '{print length($1)}' | sort -nr | head -n1)
+# ---------- Colors ----------
+PINK='\033[1;35m'      # Bold Pink (non-main branches)
+GREEN='\033[1;32m'     # Bold Green (main/master)
+BOLD='\033[1m'
+ITALIC='\033[3m'
+RED='\033[1;31m'       # Bold Red (warnings)
+RESET='\033[0m'
+BOLDYELLOW='\033[1;33m'
+YELLOW='\033[33m'      # Author names
 
-  # Iterate through each branch and apply color formatting with alignment
-  echo "$branches_with_info" | while IFS=' ' read -r branch creation_date author; do
-    # Format the creation date as "mm-dd-yy"
-    formatted_date=$(date -d "$creation_date" +"%m-%d-%y")
-    # Determine color based on branch name
-    local color end_color author_color
-    if [[ "$branch" == "main" || "$branch" == "master" ]]; then
-        color=$GREEN end_color=$RESET
-    else
-        color=$PINK end_color=$RESET
-    fi
-    author_color=$YELLOW
-    # Calculate padding for alignment
-    local padding=$((max_branch_length + 2 - ${#branch}))
-    # Print the branch name in color with aligned date and author
-    printf "%b%s%*s%s | %bAuthor:%b %s\n" "$color" "$branch" "$padding" "" "$formatted_date" "$author_color" "$end_color" "$author"
-  done
+# ---------- Helpers ----------
+die() { printf "${RED}%s${RESET}\n" "$*" >&2; exit 1; }
+warn() { printf "${BOLDYELLOW}%s${RESET}\n" "$*"; }
+info() { printf "${GREEN}%s${RESET}\n" "$*"; }
+
+require_git_repo() {
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "Not a git repository."
 }
 
-function delete_branch {
-  local branches=($@)
-  local num_branches=${#branches[@]}
-  if [[ $num_branches -eq 0 ]]; then
+current_branch() {
+  git rev-parse --abbrev-ref HEAD 2>/dev/null
+}
+
+is_protected() {
+  case "$1" in
+    main|master|develop|dev) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# ---------- Listing ----------
+list_local_branches() {
+  # Format: <name> <MM-DD-YY> <author>
+  local branches_with_info
+  branches_with_info=$(git for-each-ref \
+    --sort=creatordate \
+    --format='%(refname:short) %(creatordate:format:%m-%d-%y) %(authorname)' refs/heads/) || return 1
+
+  # Compute max name length for alignment
+  local max_branch_length
+  max_branch_length=$(echo "$branches_with_info" | awk '{print length($1)}' | sort -nr | head -n1)
+
+  printf "\nLocal branches:\n\n"
+  echo "$branches_with_info" | while IFS=' ' read -r branch creation_date author; do
+    # Choose color for branch name
+    local color end_color
+    if [[ "$branch" == "main" || "$branch" == "master" ]]; then
+      color=$GREEN; end_color=$RESET
+    else
+      color=$PINK; end_color=$RESET
+    fi
+    # padding
+    local padding=$((max_branch_length + 2 - ${#branch}))
+    # aligned, colored line
+    printf "%b%s%*s%s | %bAuthor:%b %s\n" \
+      "$color" "$branch" "$padding" "" "$creation_date" "$YELLOW" "$end_color" "$author"
+  done
+  printf "\n"
+}
+
+# ---------- Selection ----------
+select_branches_interactive() {
+  # Returns selection via stdout (space-separated) or empty string
+  if command -v fzf >/dev/null 2>&1; then
+    printf "Select branches to delete (TAB to multi-select, ENTER to confirm):\n"
+    # Use fzf -m for multi-select
+    git for-each-ref --format='%(refname:short)' refs/heads \
+      | fzf -m \
+      | tr '\n' ' '
+  else
+    printf "What branches? (space-separated): "
+    local input; read -r input
+    echo "$input"
+  fi
+}
+
+# ---------- Deletion ----------
+delete_branches() {
+  local branches=("$@")
+  local num=${#branches[@]}
+  if (( num == 0 )); then
     printf "No branch selected. Exiting.\n" >&2
     return 1
   fi
 
-  # Confirmation prompt
-  echo ""
- if [[ $num_branches -ge 1 ]]; then
-  printf "${RED}Warning!${RESET} ${YELLOW}You are about to delete branch(es):${RESET} ${PINK}%s${RESET}.\n" "${branches[*]}"
-  echo ""
-  printf "${YELLOW}Type ${ITALIC}${GREEN}confirm${RESET}${YELLOW} to delete all listed branches, or ${ITALIC}q${RESET}${YELLOW} to quit:${RESET} "
-  read -r user_input
+  # Block protected & current branch
+  local curr; curr="$(current_branch)"
+  for b in "${branches[@]}"; do
+    if [[ "$b" == "$curr" ]]; then
+      die "Refusing to delete the current branch: $b"
+    fi
+    if is_protected "$b"; then
+      die "Refusing to delete protected branch: $b"
+    fi
+  done
 
-  if [[ "$user_input" == "confirm" || "$user_input" == "con" || "$user_input" == "conf" ]]; then
-    for branch in "${branches[@]}"; do
-      if ! git branch -d "$branch"; then
-        printf "${RED}Failed to delete branch ${RESET}'%s'.\n" "$branch" >&2
-        continue
-      fi
-      printf "${GREEN}Branch '%s' deleted successfully.${RESET}\n" "$branch"
-    done
-  elif [[ "$user_input" == "n" || "$user_input" == "q" ]]; then
-    printf "Quitting.\n"
-    return 0
-  else
-    printf "${RED}Invalid option. Exiting.${RESET}\n"
-    return 1
-  fi
-else
-  echo "No branches to delete."
-fi
+  printf "\n${RED}Warning!${RESET} ${YELLOW}You are about to delete branch(es):${RESET} ${PINK}%s${RESET}\n\n" "${branches[*]}"
+  printf "${YELLOW}Type ${ITALIC}${GREEN}confirm${RESET}${YELLOW} to delete, or ${ITALIC}q${RESET}${YELLOW} to quit:${RESET} "
+  local confirm; read -r confirm
+
+  case "$confirm" in
+    confirm|con|conf)
+      for b in "${branches[@]}"; do
+        if git branch -d "$b"; then
+          printf "${GREEN}Branch '%s' deleted successfully.${RESET}\n" "$b"
+        else
+          # Offer force delete when not fully merged
+          warn "Branch '$b' is not fully merged or could not be deleted."
+          printf "Force delete '%s'? [y/N] " "$b"
+          local ans; read -r ans
+          if [[ "$ans" =~ ^[Yy]$ ]]; then
+            if git branch -D "$b"; then
+              printf "${GREEN}Branch '%s' force-deleted.${RESET}\n" "$b"
+            else
+              printf "${RED}Failed to force-delete '%s'.${RESET}\n" "$b" >&2
+            fi
+          else
+            printf "Skipped '%s'.\n" "$b"
+          fi
+        fi
+      done
+      ;;
+    q|n|no|quit|exit)
+      printf "Quitting.\n"
+      return 0
+      ;;
+    *)
+      printf "${RED}Invalid option. Exiting.${RESET}\n"
+      return 1
+      ;;
+  esac
 }
-function main {
-  # List all local branches in a vertical column with styles and details
-  echo ""
-  echo "Local branches:"
-  echo ""
+
+# ---------- Main ----------
+main() {
+  require_git_repo
+
   list_local_branches
-  printf "\nWhat branches? (separate multiple branches with spaces): "
-  
-  local branches
-  read -r branches
 
-  delete_branch $branches
+  # Selection (fzf or manual)
+  local selection
+  selection=$(select_branches_interactive)
+  # shellcheck disable=SC2206
+  local branches=( $selection )
+
+  delete_branches "${branches[@]}"
 }
 
-main
+main "$@"
