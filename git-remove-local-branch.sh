@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 # git-remove-local-branch.sh
 # Interactive local-branch cleanup (no remote deletion).
-# - Uses git date formatting (no `date -d`)
-# - Blocks protected branches
-# - Optional fzf multi-select
-# - Prompts to force delete if not fully merged
 
 set -o pipefail
 
@@ -72,19 +68,28 @@ list_local_branches() {
 select_branches_interactive() {
   # Returns selection via stdout (space-separated) or empty string
   if command -v fzf >/dev/null 2>&1; then
-    printf "Select branches to delete (TAB to multi-select, ENTER to confirm):\n"
-    # Use fzf -m for multi-select
+    # Print the prompt to terminal, not to stdout that gets captured
+    printf "Select branches to delete (TAB to multi-select, ENTER to confirm):\n" >&2
+    # Run fzf and capture only its selection output, not the prompt
     git for-each-ref --format='%(refname:short)' refs/heads \
-      | fzf -m \
-      | tr '\n' ' '
+      | fzf -m --height=40% --border \
+      | tr '\n' ' ' | sed 's/ $//'
   else
-    printf "What branches? (space-separated): "
-    # Explicitly read from terminal to avoid stdin issues
-    local input
-    read -r input </dev/tty
-    echo "$input"
+    # Create a temporary file to store the result
+    local temp_file
+    temp_file=$(mktemp)
+    
+    # Use bash -i to ensure interactive mode
+    bash -c 'read -r -p "What branches? (space-separated): " input; echo "$input" > '"$temp_file"' 2>/dev/tty </dev/tty'
+    
+    # Read the result and clean up
+    local result
+    result=$(cat "$temp_file")
+    rm -f "$temp_file"
+    echo "$result"
   fi
 }
+
 # ---------- Deletion ----------
 delete_branches() {
   local branches=("$@")
@@ -94,14 +99,28 @@ delete_branches() {
     return 1
   fi
 
-  # Block protected & current branch
+  # Validate branch names and re-check current branch (race condition prevention)
   local curr; curr="$(current_branch)"
+  if [[ -z "$curr" ]]; then
+    die "Cannot determine current branch"
+  fi
+
   for b in "${branches[@]}"; do
+    # Validate branch name format (basic validation)
+    if [[ ! "$b" =~ ^[a-zA-Z0-9/_.-]+$ ]]; then
+      die "Invalid branch name format: $b"
+    fi
+    
     if [[ "$b" == "$curr" ]]; then
       die "Refusing to delete the current branch: $b"
     fi
     if is_protected "$b"; then
       die "Refusing to delete protected branch: $b"
+    fi
+    
+    # Verify branch actually exists
+    if ! git show-ref --verify --quiet "refs/heads/$b"; then
+      die "Branch does not exist: $b"
     fi
   done
 
@@ -112,6 +131,12 @@ delete_branches() {
   case "$confirm" in
     confirm|con|conf)
       for b in "${branches[@]}"; do
+        # Re-verify branch exists before deletion (race condition)
+        if ! git show-ref --verify --quiet "refs/heads/$b"; then
+          warn "Branch no longer exists: $b"
+          continue
+        fi
+        
         if git branch -d "$b"; then
           printf "${GREEN}Branch '%s' deleted successfully.${RESET}\n" "$b"
         else
@@ -151,10 +176,30 @@ main() {
   # Selection (fzf or manual)
   local selection
   selection=$(select_branches_interactive)
-  # shellcheck disable=SC2206
-  local branches=( $selection )
-
-  delete_branches "${branches[@]}"
+  
+  # Validate and convert selection to array safely
+  if [[ -n "$selection" ]]; then
+    # shellcheck disable=SC2206
+    local branches=( $selection )
+    
+    # Remove empty elements
+    local clean_branches=()
+    for branch in "${branches[@]}"; do
+      if [[ -n "$branch" ]]; then
+        clean_branches+=("$branch")
+      fi
+    done
+    
+    if (( ${#clean_branches[@]} > 0 )); then
+      delete_branches "${clean_branches[@]}"
+    else
+      printf "No valid branches selected.\n" >&2
+      return 1
+    fi
+  else
+    printf "No branches selected. Exiting.\n" >&2
+    return 1
+  fi
 }
 
 main "$@"
