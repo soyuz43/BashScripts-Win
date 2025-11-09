@@ -79,11 +79,12 @@ select_branches_interactive() {
       | tr '\n' ' '
   else
     printf "What branches? (space-separated): "
-    local input; read -r input
+    # Explicitly read from terminal to avoid stdin issues
+    local input
+    read -r input </dev/tty
     echo "$input"
   fi
 }
-
 # ---------- Deletion ----------
 delete_branches() {
   local branches=("$@")
