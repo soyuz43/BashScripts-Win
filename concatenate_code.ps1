@@ -1,42 +1,85 @@
-# Get all relevant code and markdown files recursively
-$files = Get-ChildItem -Path .\ -Recurse -Include *.js, *.jsx, *.go, *.cs, *.md
+# ------------------------------------------------------------
+# OUTPUT FILE (WITH TIMESTAMP)
+# ------------------------------------------------------------
 
-# Define the output file
-$outputFile = "code.md"
+$timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
+$outputFile = "code-$timestamp.md"
 
-# Create or overwrite the output file
-New-Item -Path $outputFile -ItemType File -Force | Out-Null
+# ------------------------------------------------------------
+# LANGUAGE MAP
+# ------------------------------------------------------------
 
-# Define a mapping from file extensions to language identifiers
 $languageMap = @{
     ".js"   = "javascript"
     ".jsx"  = "javascript"
     ".go"   = "go"
     ".cs"   = "csharp"
     ".md"   = "markdown"
+    ".py"   = "python"
+    ".ps1"  = "powershell"
+    ".psd1" = "powershell"
+    ".psm1" = "powershell"
+    ".json" = "json"
+    ".yaml" = "yaml"
+    ".yml"  = "yaml"
 }
 
-# Loop through each file and process
-foreach ($file in $files) {
-    try {
-        # Add the file name as an H1 header
-        Add-Content -Path $outputFile -Value "# $($file.Name)"
-        
-        # Read the file's contents
-        $code = Get-Content -Path $file.FullName -Raw
-        
-        # Determine the language from the file extension
-        $extension = $file.Extension.ToLower()
-        $language = if ($languageMap.ContainsKey($extension)) { $languageMap[$extension] } else { "text" }
+# ------------------------------------------------------------
+# FILE COLLECTION
+# ------------------------------------------------------------
 
-        # Write the code block with the appropriate language
-        Add-Content -Path $outputFile -Value "+++$language"
-        Add-Content -Path $outputFile -Value $code
-        Add-Content -Path $outputFile -Value "+++"
+$files = Get-ChildItem -Path . -Recurse -File -Include `
+    *.js, *.jsx, *.go, *.cs, *.md, *.py, `
+    *.ps1, *.psd1, *.psm1, `
+    *.json, *.yaml, *.yml, *.pt |
+    Where-Object {
+        $_.FullName -notmatch '\\.git\\' -and
+        $_.FullName -notmatch 'node_modules'
+    } |
+    Sort-Object FullName
 
-        # Add a blank line to separate files
-        Add-Content -Path $outputFile -Value ""
-    } catch {
-        Write-Host "Error processing file $($file.FullName): $($_.Exception.Message)" -ForegroundColor Red
+# ------------------------------------------------------------
+# WRITE OUTPUT
+# ------------------------------------------------------------
+
+$writer = [System.IO.StreamWriter]::new($outputFile, $false)
+
+try {
+    foreach ($file in $files) {
+
+        $relPath = Resolve-Path -Relative $file.FullName
+        $writer.WriteLine("# " + $relPath)
+        $writer.WriteLine("")
+
+        $ext = $file.Extension.ToLower()
+
+        if ($ext -eq ".pt") {
+            $writer.WriteLine("*Binary PyTorch artifact. Content omitted.*")
+            $writer.WriteLine("")
+            continue
+        }
+
+        if ($languageMap.ContainsKey($ext)) {
+            $language = $languageMap[$ext]
+        } else {
+            $language = "text"
+        }
+
+        $writer.WriteLine("```" + $language)
+
+        try {
+            $content = Get-Content -Path $file.FullName -Raw -ErrorAction Stop
+            $writer.WriteLine($content)
+        } catch {
+            $writer.WriteLine("[Error reading file]")
+        }
+
+        $writer.WriteLine("```")
+        $writer.WriteLine("")
     }
 }
+finally {
+    $writer.Close()
+}
+
+Write-Host ("Generated: " + $outputFile) -ForegroundColor Green
