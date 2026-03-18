@@ -1,10 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-output_file="code.md"
+# ------------------------------------------------------------
+# OUTPUT FILE (WITH TIMESTAMP)
+# ------------------------------------------------------------
+
+timestamp="$(date +"%Y-%m-%d_%H-%M-%S")"
+output_file="code-${timestamp}.md"
+
 temp_output="$(mktemp)"
 
-# Updated language map with PowerShell, JSON, and YAML entries
+cleanup() {
+	rm -f "$temp_output"
+}
+trap cleanup EXIT
+
+# ------------------------------------------------------------
+# LANGUAGE MAP
+# ------------------------------------------------------------
+
 declare -A lang_map=(
 	[js]="javascript" [jsx]="javascript"
 	[go]="go" [cs]="csharp"
@@ -13,35 +27,53 @@ declare -A lang_map=(
 	[json]="json" [yaml]="yaml" [yml]="yaml"
 )
 
-# Modified find command to include json, yaml, and pt files
-# Note: *.docx is intentionally excluded to avoid binary corruption
-find . \
-	-type f \( -name "*.js" -o -name "*.jsx" -o -name "*.go" \
-	-o -name "*.cs" -o -name "*.md" -o -name "*.py" \
-	-o -name "*.ps1" -o -name "*.psd1" -o -name "*.psm1" \
-	-o -name "*.json" -o -name "*.yaml" -o -name "*.yml" \
-	-o -name "*.pt" \) \
-	! -name "$output_file" -print0 |
-	while IFS= read -r -d '' file; do
-		relpath="${file#./}"
-		ext="${file##*.}"
-		lang="${lang_map[$ext]:-text}"
+# ------------------------------------------------------------
+# FILE COLLECTION
+# ------------------------------------------------------------
 
-		{
-			echo "# $relpath"
+mapfile -d '' files < <(
+	find . \
+		-type f \( -name "*.js" -o -name "*.jsx" -o -name "*.go" \
+		-o -name "*.cs" -o -name "*.md" -o -name "*.py" \
+		-o -name "*.ps1" -o -name "*.psd1" -o -name "*.psm1" \
+		-o -name "*.json" -o -name "*.yaml" -o -name "*.yml" \
+		-o -name "*.pt" \) \
+		! -path "*/.git/*" \
+		! -path "*/node_modules/*" \
+		-print0 | sort -z
+)
 
-			# Handle binary PyTorch files differently (list path, skip content)
-			if [[ "$ext" == "pt" ]]; then
-				echo ""
-				echo "*Binary PyTorch artifact. Content omitted.*"
-				echo ""
-			else
-				# Handle text/code files normally
-				printf '```%s\n' "$lang"
-				cat "$file"
-				printf '```\n\n'
-			fi
-		} >>"$temp_output"
-	done
+# ------------------------------------------------------------
+# PROCESS FILES
+# ------------------------------------------------------------
+
+for file in "${files[@]}"; do
+	relpath="${file#./}"
+
+	ext="${file##*.}"
+	ext="${ext,,}" # normalize lowercase
+
+	lang="${lang_map[$ext]:-text}"
+
+	{
+		printf '# %s\n\n' "$relpath"
+
+		if [[ "$ext" == "pt" ]]; then
+			echo "*Binary PyTorch artifact. Content omitted.*"
+			echo ""
+		else
+			printf '```%s\n' "$lang"
+			cat "$file"
+			printf '\n```\n\n'
+		fi
+	} >>"$temp_output"
+done
+
+# ------------------------------------------------------------
+# FINALIZE
+# ------------------------------------------------------------
 
 mv "$temp_output" "$output_file"
+trap - EXIT
+
+echo "Generated: $output_file"
