@@ -70,6 +70,40 @@ check_changes() {
 	fi
 }
 
+get_branch() {
+	local branch
+	if ! branch=$(git branch --show-current 2>/dev/null); then
+		printf "Error: Failed to get branch\n" >&2
+		return 1
+	fi
+
+	if [[ -z "${branch// /}" ]]; then
+		if ! branch=$(git rev-parse --short HEAD 2>/dev/null); then
+			printf "Error: Detached HEAD and cannot resolve commit\n" >&2
+			return 1
+		fi
+	fi
+
+	printf "%s" "$branch"
+}
+
+sanitize_branch() {
+	local raw="$1"
+	local sanitized
+
+	if ! sanitized=$(printf "%s" "$raw" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]'); then
+		printf "Error: Failed to sanitize branch\n" >&2
+		return 1
+	fi
+
+	if [[ -z "${sanitized// /}" ]]; then
+		printf "Error: Sanitized branch empty\n" >&2
+		return 1
+	fi
+
+	printf "%s" "$sanitized"
+}
+
 build_stat() {
 	local stat="" unstaged staged
 
@@ -78,7 +112,9 @@ build_stat() {
 			printf "Error: Failed unstaged stat\n" >&2
 			return 1
 		fi
-		stat+="Unstaged:\n$unstaged\n"
+		if [[ -n "${unstaged// /}" ]]; then
+			stat+="Unstaged:\n$unstaged\n"
+		fi
 	fi
 
 	if [[ "$DIFFP_INCLUDE_STAGED" == true ]]; then
@@ -86,7 +122,9 @@ build_stat() {
 			printf "Error: Failed staged stat\n" >&2
 			return 1
 		fi
-		stat+="Staged:\n$staged"
+		if [[ -n "${staged// /}" ]]; then
+			stat+="Staged:\n$staged"
+		fi
 	fi
 
 	printf "%b" "$stat"
@@ -100,7 +138,9 @@ build_diff() {
 			printf "Error: Failed unstaged diff\n" >&2
 			return 1
 		fi
-		diff+=$'\n\nUnstaged changes:\n'"$u"
+		if [[ -n "${u// /}" ]]; then
+			diff+=$'\n\nUnstaged changes:\n'"$u"
+		fi
 	fi
 
 	if [[ "$DIFFP_INCLUDE_STAGED" == true ]]; then
@@ -108,7 +148,9 @@ build_diff() {
 			printf "Error: Failed staged diff\n" >&2
 			return 1
 		fi
-		diff+=$'\n\nStaged changes:\n'"$s"
+		if [[ -n "${s// /}" ]]; then
+			diff+=$'\n\nStaged changes:\n'"$s"
+		fi
 	fi
 
 	printf "%s" "$diff"
@@ -117,18 +159,22 @@ build_diff() {
 build_output() {
 	local branch sanitized stat diff timestamp output
 
-	if ! branch=$(git branch --show-current); then
-		printf "Error: Failed to get branch\n" >&2
+	if ! branch=$(get_branch); then
 		return 1
 	fi
 
-	if ! sanitized=$(printf "%s" "$branch" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]'); then
-		printf "Error: Failed to sanitize branch\n" >&2
+	if ! sanitized=$(sanitize_branch "$branch"); then
 		return 1
 	fi
 
-	stat=$(build_stat) || return 1
-	diff=$(build_diff) || return 1
+	if ! stat=$(build_stat); then
+		return 1
+	fi
+
+	if ! diff=$(build_diff); then
+		return 1
+	fi
+
 	timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
 	output=$(
@@ -139,16 +185,75 @@ You are reviewing a git diff. Operate as a strict, signal-maximizing reviewer.
 - Workflow: new → bet → pr
 - Branch: $branch
 - Timestamp: $timestamp
+- bet guarantees:
+  - formatting/linting already applied where configured
+  - generated files are blocked
+
+## Review Priorities (in order)
+1. Correctness / Bugs (critical first)
+2. Behavioral changes / regressions
+3. Language-specific risks and edge cases
+4. Maintainability improvements
+5. Ignore pure formatting changes unless they affect behavior
+
+## Output Rules (STRICT)
+- Be informative, then concise
+- Prioritize high-signal insights over completeness
+- No filler or redundant statements
+- Each bullet must add new, non-obvious information
+- Max 6 bullets per section
+- Use dense phrasing (compress after conveying meaning)
+- Order bugs by severity (critical → minor)
 
 ## Files Changed
 \`\`\`
 $stat
 \`\`\`
 
-## Branch
+## Required Output
+
+### Explanation
+- 1–3 bullets summarizing what changed and why it matters
+
+### Bugs
+- Bullet list of concrete issues (or "None")
+
+### Improvements
+- Bullet list of actionable enhancements (or "None")
+
+### Branch
 \`\`\`bash
 new ${sanitized}-<feature-description>
 \`\`\`
+
+### Commit Message
+\`\`\`text
+<imperative, ≤72 chars, no period>
+\`\`\`
+
+### PR Command
+\`\`\`bash
+gh pr create --title "<same as commit>" --body "<structured body>"
+\`\`\`
+
+## PR Body Format (STRICT)
+Summary:
+- <1–2 lines: what changed + why>
+
+Changes:
+- <key change 1>
+- <key change 2>
+- <key change 3>
+
+Notes:
+- <optional: risks, edge cases, or follow-ups (omit if none)>
+
+## Additional Constraints
+- Prefer minimal, safe changes over cleverness
+- Preserve backward compatibility unless clearly intentional
+- Follow the conventions of the language(s) in the diff
+- Flag silent failure risks and missing error handling
+- Highlight unsafe or non-idiomatic patterns even if they pass linters
 
 ## Diff
 $diff
