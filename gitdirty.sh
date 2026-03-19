@@ -1,102 +1,99 @@
 #!/usr/bin/env bash
+set -o pipefail
 
 BASE="$HOME/workspace"
+ROOT="${BASE}/${1:-}"
 
-if [[ -n "${1:-}" ]]; then
-	ROOT="$BASE/$1"
-else
-	ROOT="$BASE"
-fi
-export ROOT
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
-# Color setup
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-# Temporary file for collecting results
-tmpfile="$(mktemp).gitdirty"
-trap 'rm -f "$tmpfile"' EXIT
-
-# Process a single repository (exported for xargs)
 process_repo() {
-	local gitdir="$1"
-	local repo="${gitdir%/.git}"
-	local output=""
+	local gitdir repo branch dirty ahead behind file
 
-	# Use git -C to avoid cd
-	local branch dirty ahead behind
+	gitdir="$1"
+	repo="${gitdir%/.git}"
 
-	branch=$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
-	dirty=$(git -C "$repo" status --porcelain 2>/dev/null)
+	local branch_tmp
+	if ! branch_tmp=$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null); then
+		branch="unknown"
+	else
+		branch="$branch_tmp"
+	fi
 
-	if git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
-		ahead=$(git -C "$repo" rev-list --count '@{u}..' 2>/dev/null || echo 0)
-		behind=$(git -C "$repo" rev-list --count '..@{u}' 2>/dev/null || echo 0)
+	local dirty_tmp
+	if ! dirty_tmp=$(git -C "$repo" status --porcelain 2>/dev/null); then
+		dirty=""
+	else
+		dirty="$dirty_tmp"
+	fi
+
+	if git -C "$repo" rev-parse '@{u}' >/dev/null 2>&1; then
+		local ahead_tmp behind_tmp
+
+		if ! ahead_tmp=$(git -C "$repo" rev-list --count '@{u}..' 2>/dev/null); then
+			ahead=0
+		else
+			ahead="$ahead_tmp"
+		fi
+
+		if ! behind_tmp=$(git -C "$repo" rev-list --count '..@{u}' 2>/dev/null); then
+			behind=0
+		else
+			behind="$behind_tmp"
+		fi
 	else
 		ahead=0
 		behind=0
 	fi
 
-	# Only output if something is interesting
-	if [[ -n "$dirty" || $ahead -gt 0 || $behind -gt 0 ]]; then
-		# Build output lines
-		output+=$'\n'
-		# Highlight repos on main/master with changes
-		if [[ "$branch" == "main" || "$branch" == "master" ]] && [[ -n "$dirty" ]]; then
-			output+="${RED}⚠️  $repo (on $branch with changes)${NC}\n"
-		else
-			output+="${GREEN}📦 $repo${NC}\n"
-		fi
-		output+="  branch: $branch\n"
-		if [[ -n "$dirty" ]]; then
-			output+="  ${RED}→ Uncommitted changes${NC}\n"
-		fi
-		if [[ $ahead -gt 0 ]]; then
-			output+="  ${YELLOW}→ Ahead by $ahead commit(s)${NC}\n"
-		fi
-		if [[ $behind -gt 0 ]]; then
-			output+="  ${BLUE}→ Behind by $behind commit(s)${NC}\n"
-		fi
+	if [[ -n "$dirty" || "$ahead" -gt 0 || "$behind" -gt 0 ]]; then
+		file="$TMP_DIR/$(basename "$repo").$$.$RANDOM"
 
-		# Write to temp file for summary
-		local mytmp
-		mytmp="$(mktemp "${tmpfile}.XXXX")"
+		{
+			printf "REPO:%s\n" "$repo"
+			[[ -n "$dirty" ]] && printf "DIRTY\n"
+			[[ "$ahead" -gt 0 ]] && printf "AHEAD:%s\n" "$ahead"
+			[[ "$behind" -gt 0 ]] && printf "BEHIND:%s\n" "$behind"
+		} >"$file"
 
-		echo "REPO: $repo" >>"$mytmp"
-		[[ -n "$dirty" ]] && echo "DIRTY" >>"$mytmp"
-		[[ $ahead -gt 0 ]] && echo "AHEAD:$ahead" >>"$mytmp"
-		[[ $behind -gt 0 ]] && echo "BEHIND:$behind" >>"$mytmp"
-		echo "---" >>"$mytmp"
-	fi
-
-	# Print output immediately (if any)
-	if [[ -n "$output" ]]; then
-		printf "%b" "$output"
+		printf "\n[repo] %s\n" "$repo"
+		printf "  branch: %s\n" "$branch"
+		[[ -n "$dirty" ]] && printf "  [!] dirty\n"
+		[[ "$ahead" -gt 0 ]] && printf "  [+] ahead %s\n" "$ahead"
+		[[ "$behind" -gt 0 ]] && printf "  [-] behind %s\n" "$behind"
 	fi
 }
-export -f process_repo
 
-# Find all .git directories and process in parallel
+export -f process_repo TMP_DIR
+
 find "$ROOT" -name ".git" -type d -print0 |
-	xargs -0 -P 8 -I {} bash -c 'process_repo "$@"' _ {} 2>/dev/null
-#  MERGE parallel temp files into one
-cat "${tmpfile}".* 2>/dev/null >"$tmpfile" || true
-# Gather totals from the temporary file
-total=$(find "$ROOT" -name ".git" -type d | wc -l)
-dirty_count=$(grep -c "^DIRTY$" "$tmpfile" 2>/dev/null || echo 0)
-unpushed_count=$(grep -c "^AHEAD:" "$tmpfile" 2>/dev/null || echo 0)
-ahead_count=$(awk -F: '/^AHEAD:/ {sum+=$2} END {print sum}' "$tmpfile" 2>/dev/null || echo 0)
-behind_count=$(awk -F: '/^BEHIND:/ {sum+=$2} END {print sum}' "$tmpfile" 2>/dev/null || echo 0)
+	xargs -0 -P 8 -I {} bash -c 'process_repo "$@"' _ {}
 
-# Summary
-echo ""
-echo "--- Summary ---"
-echo "Scanned repositories: $total"
-echo -e "${RED}Dirty: $dirty_count${NC}"
-echo -e "${YELLOW}Repos with unpushed commits: $unpushed_count${NC}"
-echo -e "${YELLOW}Total ahead commits: $ahead_count${NC}"
-echo -e "${BLUE}Total behind commits: $behind_count${NC}"
-rm -f "${tmpfile}".*
+aggregate() {
+	local total dirty_count ahead_count behind_count
+	local files
+
+	total=$(find "$ROOT" -name ".git" -type d | wc -l)
+
+	shopt -s nullglob
+	files=("$TMP_DIR"/*)
+	shopt -u nullglob
+
+	if [[ ${#files[@]} -gt 0 ]]; then
+		dirty_count=$(grep -hc "^DIRTY" "${files[@]}" 2>/dev/null)
+		ahead_count=$(awk -F: '/^AHEAD:/ {s+=$2} END{print s+0}' "${files[@]}" 2>/dev/null)
+		behind_count=$(awk -F: '/^BEHIND:/ {s+=$2} END{print s+0}' "${files[@]}" 2>/dev/null)
+	else
+		dirty_count=0
+		ahead_count=0
+		behind_count=0
+	fi
+
+	printf "\n--- Summary ---\n"
+	printf "Repos: %s\n" "$total"
+	printf "Dirty: %s\n" "$dirty_count"
+	printf "Ahead commits: %s\n" "$ahead_count"
+	printf "Behind commits: %s\n" "$behind_count"
+}
+
+aggregate

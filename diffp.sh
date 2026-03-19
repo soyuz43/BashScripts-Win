@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -o pipefail
+
 export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 
@@ -28,15 +29,9 @@ validate_git_repo() {
 parse_args() {
 	while [[ "$#" -gt 0 ]]; do
 		case "$1" in
-		--staged | -s)
-			DIFFP_INCLUDE_UNSTAGED=false
-			;;
-		--unstaged | -u)
-			DIFFP_INCLUDE_STAGED=false
-			;;
-		--no-clip | -n)
-			DIFFP_COPY_TO_CLIPBOARD=false
-			;;
+		--staged | -s) DIFFP_INCLUDE_UNSTAGED=false ;;
+		--unstaged | -u) DIFFP_INCLUDE_STAGED=false ;;
+		--no-clip | -n) DIFFP_COPY_TO_CLIPBOARD=false ;;
 		--output | -o)
 			shift
 			if [[ -z "${1:-}" || "$1" =~ ^- ]]; then
@@ -47,7 +42,7 @@ parse_args() {
 			;;
 		--help | -h)
 			print_help
-			return 1
+			return 0
 			;;
 		*)
 			printf "Error: Unknown option: %s\n" "$1" >&2
@@ -61,16 +56,12 @@ parse_args() {
 check_changes() {
 	local has_changes=false
 
-	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]]; then
-		if ! git diff --quiet; then
-			has_changes=true
-		fi
+	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]] && ! git diff --quiet; then
+		has_changes=true
 	fi
 
-	if [[ "$DIFFP_INCLUDE_STAGED" == true ]]; then
-		if ! git diff --cached --quiet; then
-			has_changes=true
-		fi
+	if [[ "$DIFFP_INCLUDE_STAGED" == true ]] && ! git diff --cached --quiet; then
+		has_changes=true
 	fi
 
 	if [[ "$has_changes" == false ]]; then
@@ -79,78 +70,42 @@ check_changes() {
 	fi
 }
 
-get_branch() {
-	local branch
-	if ! branch=$(git branch --show-current 2>/dev/null); then
-		printf "Error: Failed to get current branch\n" >&2
-		return 1
-	fi
-
-	if [[ -z "${branch// /}" ]]; then
-		printf "Error: Empty branch name\n" >&2
-		return 1
-	fi
-
-	printf "%s" "$branch"
-}
-
-sanitize_branch() {
-	local raw="$1"
-	local sanitized
-
-	if ! sanitized=$(printf "%s" "$raw" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]'); then
-		printf "Error: Failed to sanitize branch name\n" >&2
-		return 1
-	fi
-
-	if [[ -z "${sanitized// /}" ]]; then
-		printf "Error: Sanitized branch is empty\n" >&2
-		return 1
-	fi
-
-	printf "%s" "$sanitized"
-}
-
 build_stat() {
-	local stat unstaged staged
-
-	stat=""
+	local stat="" unstaged staged
 
 	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]]; then
-		if ! unstaged=$(git diff --stat 2>/dev/null); then
-			printf "Error: Failed to get unstaged diff stat\n" >&2
+		if ! unstaged=$(git diff --stat); then
+			printf "Error: Failed unstaged stat\n" >&2
 			return 1
 		fi
-		stat+="$unstaged"$'\n'
+		stat+="Unstaged:\n$unstaged\n"
 	fi
 
 	if [[ "$DIFFP_INCLUDE_STAGED" == true ]]; then
-		if ! staged=$(git diff --cached --stat 2>/dev/null); then
-			printf "Error: Failed to get staged diff stat\n" >&2
+		if ! staged=$(git diff --cached --stat); then
+			printf "Error: Failed staged stat\n" >&2
 			return 1
 		fi
-		stat+="$staged"
+		stat+="Staged:\n$staged"
 	fi
 
-	printf "%s" "$stat"
+	printf "%b" "$stat"
 }
 
 build_diff() {
-	local diff=""
+	local diff="" u s
 
 	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]]; then
-		local u
-		if ! u=$(git diff 2>/dev/null); then
-			printf "Error: Failed to get unstaged diff\n" >&2
+		if ! u=$(git diff); then
+			printf "Error: Failed unstaged diff\n" >&2
 			return 1
 		fi
 		diff+=$'\n\nUnstaged changes:\n'"$u"
 	fi
 
 	if [[ "$DIFFP_INCLUDE_STAGED" == true ]]; then
-		local s
-		if ! s=$(git diff --cached 2>/dev/null); then
-			printf "Error: Failed to get staged diff\n" >&2
+		if ! s=$(git diff --cached); then
+			printf "Error: Failed staged diff\n" >&2
 			return 1
 		fi
 		diff+=$'\n\nStaged changes:\n'"$s"
@@ -162,22 +117,18 @@ build_diff() {
 build_output() {
 	local branch sanitized stat diff timestamp output
 
-	if ! branch=$(get_branch); then
+	if ! branch=$(git branch --show-current); then
+		printf "Error: Failed to get branch\n" >&2
 		return 1
 	fi
 
-	if ! sanitized=$(sanitize_branch "$branch"); then
+	if ! sanitized=$(printf "%s" "$branch" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]'); then
+		printf "Error: Failed to sanitize branch\n" >&2
 		return 1
 	fi
 
-	if ! stat=$(build_stat); then
-		return 1
-	fi
-
-	if ! diff=$(build_diff); then
-		return 1
-	fi
-
+	stat=$(build_stat) || return 1
+	diff=$(build_diff) || return 1
 	timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
 	output=$(
@@ -188,75 +139,16 @@ You are reviewing a git diff. Operate as a strict, signal-maximizing reviewer.
 - Workflow: new → bet → pr
 - Branch: $branch
 - Timestamp: $timestamp
-- bet guarantees:
-  - formatting/linting already applied where configured
-  - generated files are blocked
-
-## Review Priorities (in order)
-1. Correctness / Bugs (critical first)
-2. Behavioral changes / regressions
-3. Language-specific risks and edge cases
-4. Maintainability improvements
-5. Ignore pure formatting changes unless they affect behavior
-
-## Output Rules (STRICT)
-- Be informative, then concise
-- Prioritize high-signal insights over completeness
-- No filler or redundant statements
-- Each bullet must add new, non-obvious information
-- Max 6 bullets per section
-- Use dense phrasing (compress after conveying meaning)
-- Order bugs by severity (critical → minor)
 
 ## Files Changed
 \`\`\`
 $stat
 \`\`\`
 
-## Required Output
-
-### Explanation
-- 1–3 bullets summarizing what changed and why it matters
-
-### Bugs
-- Bullet list of concrete issues (or "None")
-
-### Improvements
-- Bullet list of actionable enhancements (or "None")
-
-### Branch
+## Branch
 \`\`\`bash
 new ${sanitized}-<feature-description>
 \`\`\`
-
-### Commit Message
-\`\`\`text
-<imperative, ≤72 chars, no period>
-\`\`\`
-
-### PR Command
-\`\`\`bash
-gh pr create --title "<same as commit>" --body "<structured body>"
-\`\`\`
-
-## PR Body Format (STRICT)
-Summary:
-- <1–2 lines: what changed + why>
-
-Changes:
-- <key change 1>
-- <key change 2>
-- <key change 3>
-
-Notes:
-- <optional: risks, edge cases, or follow-ups (omit if none)>
-
-## Additional Constraints
-- Prefer minimal, safe changes over cleverness
-- Preserve backward compatibility unless clearly intentional
-- Follow the conventions of the language(s) in the diff
-- Flag silent failure risks and missing error handling
-- Highlight unsafe or non-idiomatic patterns even if they pass linters
 
 ## Diff
 $diff
@@ -271,33 +163,25 @@ write_output() {
 
 	if [[ -n "${DIFFP_OUTPUT_FILE// /}" ]]; then
 		if ! printf "%s\n" "$content" >"$DIFFP_OUTPUT_FILE"; then
-			printf "Error: Failed to write to file: %s\n" "$DIFFP_OUTPUT_FILE" >&2
+			printf "Error: Failed to write file\n" >&2
 			return 1
 		fi
-		printf "Diff saved to: %s\n" "$DIFFP_OUTPUT_FILE"
+		printf "Saved: %s\n" "$DIFFP_OUTPUT_FILE"
 		return
 	fi
 
 	if [[ "$DIFFP_COPY_TO_CLIPBOARD" == true ]]; then
-		if ! command -v clip.exe >/dev/null 2>&1; then
-			printf "Error: clip.exe not found\n" >&2
+		if command -v iconv >/dev/null 2>&1 && command -v clip.exe >/dev/null 2>&1; then
+			if ! printf "%s" "$content" | iconv -f UTF-8 -t UTF-16LE | clip.exe; then
+				printf "Error: Clipboard copy failed\n" >&2
+				return 1
+			fi
+		else
+			printf "Error: Clipboard tools missing\n" >&2
 			return 1
 		fi
 
-		if ! printf "%s" "$content" | clip.exe; then
-			printf "Error: Failed to copy to clipboard\n" >&2
-			return 1
-		fi
-
-		local branch files
-		branch=$(git branch --show-current 2>/dev/null)
-		files=$(git diff --stat | tail -1 | grep -Eo '[0-9]+ file' 2>/dev/null)
-
-		[[ -z "$files" ]] && files="0 files"
-
-		printf "✓ Copied diff + structured review prompt to clipboard\n"
-		printf "  Branch: %s\n" "$branch"
-		printf "  Files changed: %s\n" "$files"
+		printf "[OK] Copied to clipboard\n"
 		return
 	fi
 
@@ -306,7 +190,7 @@ write_output() {
 
 main() {
 	if ! parse_args "$@"; then
-		return 1
+		return $?
 	fi
 
 	if ! validate_git_repo; then
@@ -322,14 +206,7 @@ main() {
 		return 1
 	fi
 
-	if [[ -z "${output// /}" ]]; then
-		printf "Error: Generated output is empty\n" >&2
-		return 1
-	fi
-
-	if ! write_output "$output"; then
-		return 1
-	fi
+	write_output "$output"
 }
 
 main "$@"
