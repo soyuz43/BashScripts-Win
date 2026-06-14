@@ -1,51 +1,101 @@
-# BashScripts-Win by soyuz43
+# BashScripts-WIN
 
-This repo contains custom Bash scripts used in tandem with my [dotfiles](https://github.com/soyuz43/dotfiles), specifically designed for Git Bash on Windows 11. These scripts streamline development workflows across Git, Node, C#, and scripting tasks.
+Shell scripts used by the Git Bash environment in dotfiles-WIN.
 
 ## Scripts
 
-| Script                   | Description                                              |
-|--------------------------|----------------------------------------------------------|
-| `initproject.sh`         | Bootstraps a new project directory structure             |
-| `git-remove-local-branch.sh` | Removes a local Git branch                            |
-| `git-add-commit.sh`      | Quickly stages all changes and commits with a message    |
-| `dbserve.sh`             | Launches a local development database (e.g. MongoDB)     |
-| `concatenate_code.sh`    | Concatenates code files into a Markdown export           |
-| `concatenate_code.ps1`   | PowerShell variant of the above                          |
-| `make-executable.sh`     | Makes all `.sh` files in the directory executable        |
+### `diffp.sh`
 
-## Integration with `.bashrc`
+Creates a Git review prompt containing:
 
-These scripts are designed to work seamlessly with the aliases and environment defined in [my `.bashrc` setup](https://github.com/soyuz43/dotfiles). Clone both repos and you're good to go.
+- Current branch
+- Timestamp
+- Changed file summary
+- Staged and/or unstaged diff
+- Review instructions
 
-## Usage
-
-Clone the repo:
-
-```bash
-git clone git@github.com:soyuz43/BashScripts-Win.git ~/workspace/BashScripts-Win
-cd ~/workspace/BashScripts-Win
-./make-executable.sh
-````
-
-Make sure your `.bashrc` (from [dotfiles](https://github.com/soyuz43/dotfiles)) includes this path:
-
-```bash
-export PATH="$HOME/workspace/BashScripts-Win:$PATH"
-```
-
-Then reload your shell:
-
-```bash
-source ~/.bashrc
-```
-
-## Philosophy
-
-These scripts are designed to reduce cognitive friction. Type less, do more. The idea is to automate away decision fatigue and focus on the real work.
+Supports clipboard output or writing to a file.
 
 ---
 
-**Author:** [soyuz43](https://github.com/soyuz43)
+### `git-add-commit.sh`
 
+Interactive commit helper.
 
+Functions include:
+
+- Normalize line endings
+- Run configured formatters
+- Run ShellCheck
+- Show a staged summary
+- Prompt for a commit message
+- Create the commit
+
+---
+
+### `git-remove-local-branch.sh`
+
+Interactive local branch cleanup.
+
+Functions include:
+
+- List local branches with metadata
+- Select branches using `fzf`
+- Prevent deletion of protected branches
+- Prevent deletion of the current branch
+- Confirm before deletion
+- Attempt safe deletion before offering force deletion
+- Show deletion results
+
+---
+
+### `initproject.sh`
+
+Creates a new project directory and initializes the configured project structure.
+
+---
+
+### `concatenate_code.sh`
+
+Exports source files into a single Markdown document.
+
+Functions include:
+
+- Detect supported file types
+- Apply appropriate Markdown language fences
+- Combine files into a timestamped output file
+
+---
+
+### `concatenate_code.ps1`
+
+PowerShell implementation of `concatenate_code.sh`.
+
+---
+
+### `dbserve.sh`
+
+Starts the configured development database server.
+
+---
+
+### `make-executable.sh`
+
+Applies executable permissions to shell scripts in the repository.
+
+---
+
+### `update-winrar.sh`
+
+Uninstalls the current WinRAR installation and installs the latest version using `winget`.
+
+## Dependencies
+
+Recommended tools:
+
+- Git Bash
+- GitHub CLI (`gh`)
+- `fzf`
+- `ShellCheck`
+- `shfmt`
+- `winget`

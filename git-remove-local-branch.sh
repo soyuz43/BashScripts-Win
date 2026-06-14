@@ -42,6 +42,23 @@ is_protected() {
 	esac
 }
 
+print_final_state() {
+	local deleted_count="$1"
+	local skipped_count="$2"
+	local failed_count="$3"
+
+	printf "\n%bState:%b\n" "$YELLOW" "$RESET"
+	printf "  Deleted: %s\n" "$deleted_count"
+	printf "  Skipped: %s\n" "$skipped_count"
+	printf "  Failed:  %s\n" "$failed_count"
+
+	if ((deleted_count == 0)); then
+		printf "%bNo branches were deleted.%b\n" "$BOLDYELLOW" "$RESET"
+	else
+		printf "%bBranch cleanup completed.%b\n" "$GREEN" "$RESET"
+	fi
+}
+
 # ---------- Listing ----------
 list_local_branches() {
 	local branches_with_info
@@ -75,10 +92,22 @@ list_local_branches() {
 }
 
 # ---------- Selection ----------
+list_deletable_branches() {
+	local curr
+	curr=$(current_branch)
+
+	git for-each-ref --format='%(refname:short)' refs/heads |
+		while IFS= read -r branch; do
+			[[ "$branch" == "$curr" ]] && continue
+			is_protected "$branch" && continue
+			printf "%s\n" "$branch"
+		done
+}
+
 select_branches_interactive() {
 	if command -v fzf >/dev/null 2>&1; then
 		printf "Select branches to delete (TAB multi-select, ENTER confirm):\n" >&2
-		git for-each-ref --format='%(refname:short)' refs/heads |
+		list_deletable_branches |
 			fzf -m --height=40% --border |
 			tr '\n' ' ' | sed 's/ $//'
 	else
@@ -142,16 +171,22 @@ delete_branches() {
 	local confirm
 	read -r confirm
 
+	local deleted_count=0
+	local skipped_count=0
+	local failed_count=0
+
 	case "$confirm" in
 	confirm | con | conf)
 		for b in "${branches[@]}"; do
 			if ! git show-ref --verify --quiet "refs/heads/$b"; then
-				warn "Branch disappeared: $b"
+				warn "Branch disappeared before deletion: $b"
+				((skipped_count += 1))
 				continue
 			fi
 
 			if git branch -d "$b"; then
 				printf "%bBranch '%s' deleted.%b\n" "$GREEN" "$b" "$RESET"
+				((deleted_count += 1))
 			else
 				warn "Not fully merged: $b"
 				printf "Force delete '%s'? [y/N] " "$b"
@@ -162,21 +197,29 @@ delete_branches() {
 				if [[ "$ans" =~ ^[Yy]$ ]]; then
 					if git branch -D "$b"; then
 						printf "%bForce-deleted '%s'%b\n" "$GREEN" "$b" "$RESET"
+						((deleted_count += 1))
 					else
 						printf "%bFailed force-delete '%s'%b\n" "$RED" "$b" "$RESET" >&2
+						((failed_count += 1))
 					fi
 				else
 					printf "Skipped '%s'\n" "$b"
+					((skipped_count += 1))
 				fi
 			fi
 		done
+
+		print_final_state "$deleted_count" "$skipped_count" "$failed_count"
 		;;
 	q | n | no | quit | exit)
 		printf "Quitting.\n"
+		print_final_state 0 "${#branches[@]}" 0
 		return 0
 		;;
 	*)
-		printf "%bInvalid option%b\n" "$RED" "$RESET"
+		printf "%bInvalid option: %s%b\n" "$RED" "$confirm" "$RESET"
+		printf "Expected: confirm, con, conf, q, quit, n, no, or exit.\n"
+		print_final_state 0 "${#branches[@]}" 0
 		return 1
 		;;
 	esac
