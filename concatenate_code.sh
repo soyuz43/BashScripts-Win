@@ -20,7 +20,7 @@ trap cleanup EXIT
 # ------------------------------------------------------------
 
 declare -A lang_map=(
-	[js]="javascript" [jsx]="javascript"
+	[js]="javascript" [jsx]="javascript" [mjs]="javascript"
 	[go]="go" [cs]="csharp"
 	[md]="markdown" [py]="python"
 	[ps1]="powershell" [psd1]="powershell" [psm1]="powershell"
@@ -33,7 +33,7 @@ declare -A lang_map=(
 
 mapfile -d '' files < <(
 	find . \
-		-type f \( -name "*.js" -o -name "*.jsx" -o -name "*.go" \
+		-type f \( -name "*.js" -o -name "*.jsx" -o -name "*.mjs" -o -name "*.go" \
 		-o -name "*.cs" -o -name "*.md" -o -name "*.py" \
 		-o -name "*.ps1" -o -name "*.psd1" -o -name "*.psm1" \
 		-o -name "*.json" -o -name "*.yaml" -o -name "*.yml" \
