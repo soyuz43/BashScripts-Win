@@ -27,7 +27,9 @@ check_branch() {
 
 fix_crlf() {
 	echo -e "\n\e[1;3;36mNormalizing line endings (LF)...\e[0m"
-	find . -type f -name "*.sh" -exec sed -i 's/\r$//' {} +
+	git ls-files -z --cached --others --exclude-standard '*.sh' | while IFS= read -r -d '' file; do
+		sed -i 's/\r$//' "$file"
+	done
 }
 
 detect_crlf() {
@@ -37,21 +39,19 @@ detect_crlf() {
 		if grep -q $'\r' "$file"; then
 			bad_files+=("$file")
 		fi
-	done < <(find . -type f -name "*.sh" -print0)
+	done < <(git ls-files -z --cached --others --exclude-standard '*.sh')
 
 	if ((${#bad_files[@]} > 0)); then
 		echo -e "\n\e[1;31mCRLF detected in:\e[0m"
-		printf '  - %s\n' "${bad_files[@]}"
-		return 1
+		printf '  %s\n' "${bad_files[@]}"
+		exit 1
 	fi
-
-	return 0
 }
 
 format_shell() {
 	if command -v shfmt >/dev/null 2>&1; then
 		echo -e "\n\e[1;3;36mFormatting shell scripts (shfmt)...\e[0m"
-		find . -type f -name "*.sh" -exec shfmt -w {} +
+		git ls-files -z --cached --others --exclude-standard '*.sh' | xargs -0 -r shfmt -w
 		echo -e "\e[1;32mFormatting complete.\e[0m"
 	else
 		echo -e "\n\e[1;33mshfmt not installed — skipping.\e[0m"
