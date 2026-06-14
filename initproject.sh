@@ -9,10 +9,10 @@ FEATURE_BRANCH="${2:-}"
 # === Prompt for Inputs ===
 prompt_for_inputs() {
 	if [[ -z "$PROJECT_NAME" ]]; then
-		read -rp "📁 Enter project name: " PROJECT_NAME
+		read -rp "[DIR] Enter project name: " PROJECT_NAME
 	fi
 	if [[ -z "$FEATURE_BRANCH" ]]; then
-		read -rp "🌿 Enter feature branch (optional): " FEATURE_BRANCH
+		read -rp "[BRANCH] Enter feature branch (optional): " FEATURE_BRANCH
 	fi
 
 	PROJECT_PATH="$BASE_DIR/$PROJECT_NAME"
@@ -28,26 +28,27 @@ create_structure() {
 # === Initialize Git Repo ===
 init_git_repo() {
 	cd "$PROJECT_PATH"
+
 	if [[ ! -d .git ]]; then
 		git init
-		printf "✅ Git repository initialized\n"
+		printf "[OK] Git repository initialized\n"
 	else
-		printf "⚠️ Repo already exists — skipping init\n"
+		printf "[WARN] Repo already exists -- skipping init\n"
 	fi
 }
 
 # === Create Remote Repo ===
 setup_remote() {
 	if ! command -v gh &>/dev/null; then
-		printf "❌ GitHub CLI not found — install at https://cli.github.com/\n" >&2
+		printf "[ERROR] GitHub CLI not found -- install at https://cli.github.com/\n" >&2
 		return 1
 	fi
 
 	if ! git remote | grep -q "^origin$"; then
 		gh repo create "$PROJECT_NAME" --source=. --public --remote=origin
-		printf "✅ Remote repo created and linked\n"
+		printf "[OK] Remote repo created and linked\n"
 	else
-		printf "⚠️ Remote 'origin' already exists — skipping\n"
+		printf "[WARN] Remote 'origin' already exists -- skipping\n"
 	fi
 }
 
@@ -58,9 +59,9 @@ make_initial_commit_and_push_main() {
 		git commit -m "initial commit"
 		git branch -M main
 		git push -u origin main
-		printf "✅ Initial commit pushed to 'main'\n"
+		printf "[OK] Initial commit pushed to 'main'\n"
 	else
-		printf "⚠️ Repo already has commits — skipping push\n"
+		printf "[WARN] Repo already has commits -- skipping push\n"
 	fi
 }
 
@@ -69,10 +70,10 @@ create_feature_branch() {
 	if [[ -n "$FEATURE_BRANCH" ]]; then
 		if git show-ref --verify --quiet "refs/heads/$FEATURE_BRANCH"; then
 			git switch "$FEATURE_BRANCH"
-			printf "✅ Switched to existing branch: %s\n" "$FEATURE_BRANCH"
+			printf "[OK] Switched to existing branch: %s\n" "$FEATURE_BRANCH"
 		else
 			git switch -c "$FEATURE_BRANCH"
-			printf "✅ Created and switched to new branch: %s\n" "$FEATURE_BRANCH"
+			printf "[OK] Created and switched to new branch: %s\n" "$FEATURE_BRANCH"
 		fi
 	fi
 }
@@ -82,15 +83,16 @@ print_summary() {
 	local user
 	user=$(gh api user --jq .login 2>/dev/null || echo "unknown-user")
 
-	printf "\n🎉 Project '%s' initialized.\n" "$PROJECT_NAME"
-	printf "🌐 GitHub: https://github.com/%s/%s\n" "$user" "$PROJECT_NAME"
-	printf "📁 Local:  cd \"%s\"\n\n" "$PROJECT_PATH"
+	printf "\n=== Project '%s' initialized ===\n" "$PROJECT_NAME"
+	printf "[URL] GitHub: https://github.com/%s/%s\n" "$user" "$PROJECT_NAME"
+	printf "[DIR] Local:  cd \"%s\"\n\n" "$PROJECT_PATH"
 
-	printf "👉 Next Steps:\n"
-	printf "   cd \"%s\"\n" "$PROJECT_PATH"
-	printf "   code .\n"
+	printf "--> Next Steps:\n"
+	printf "    cd \"%s\"\n" "$PROJECT_PATH"
+	printf "    code .\n"
+
 	if [[ -n "$FEATURE_BRANCH" ]]; then
-		printf "   git push -u origin %s  # when ready\n" "$FEATURE_BRANCH"
+		printf "    git push -u origin %s  # when ready\n" "$FEATURE_BRANCH"
 	fi
 }
 
