@@ -133,15 +133,40 @@ review_changes() {
 }
 
 confirm_commit() {
-	read -r -p $'\e[1;33mCommit? ([y]/n): \e[0m' decision
+	local decision msg trimmed
+
+	read -r -p $'\e[1;33mCommit? [Enter/y = message prompt, n = cancel, or type message]: \e[0m' decision
 	decision=${decision:-y}
 
-	if [[ "$decision" != "y" ]]; then
+	case "$decision" in
+	y | Y)
+		read -r -p $'\e[1;32mCommit message: \e[0m' msg
+		;;
+
+	n | N)
 		echo -e "\e[1;31mCommit aborted.\e[0m"
 		return 1
-	fi
+		;;
 
-	read -r -p $'\e[1;32mCommit message: \e[0m' msg
+	*)
+		msg="$decision"
+
+		# Fast-path safety check:
+		# prevent accidental short input from becoming a commit message.
+		trimmed="${msg//[[:space:]]/}"
+
+		if ((${#trimmed} < 5)); then
+			echo -e "\e[1;31mCommit blocked: inline message too short to safely interpret as a commit message.\e[0m"
+			echo -e "\e[1;33mUse Enter or 'y' to enter a short message manually.\e[0m"
+			return 1
+		fi
+
+		echo -e "\n\e[1;36mInline commit message detected:\e[0m"
+		printf "  %s\n" "$msg"
+		echo -e "\e[1;32mProceeding with commit...\e[0m"
+		;;
+	esac
+
 	git commit -m "$msg"
 
 	echo -e "\e[1;32mCommit successful.\e[0m"
