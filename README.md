@@ -1,101 +1,209 @@
 # BashScripts-WIN
 
-Shell scripts used by the Git Bash environment in dotfiles-WIN.
+Utility scripts for the Git Bash environment used with [`dotfiles-WIN`](https://github.com/soyuz43/dotfiles-WIN).
+
+This repository owns scripts, package bootstrapping, maintenance workflows, and Makefile shortcuts.
+
+The companion `dotfiles-WIN` repository owns shell, Git, WSL, VS Code, and Windows Terminal configuration.
+
+## Companion Repository
+
+Git Bash configuration, aliases, and managed user configuration:
+
+https://github.com/soyuz43/dotfiles-WIN
+
+Expected local path:
+
+```bash
+~/dotfiles
+````
+
+## First-Time Setup on a New Windows Machine
+
+Install Git for Windows first so Git Bash is available.
+
+Then clone this repository:
+
+```bash
+git clone https://github.com/soyuz43/BashScripts-WIN.git ~/BashScripts
+cd ~/BashScripts
+```
+
+Run the full first-time setup:
+
+```bash
+make new
+```
+
+`make new` runs the bootstrap installer, restores managed dotfiles, and prints configuration status.
+
+This is the preferred new-machine command.
+
+## Manual Bootstrap
+
+You can also run the installer directly:
+
+```bash
+./install.sh
+```
+
+Then choose:
+
+```text
+1 - bootstrap
+```
+
+Or run bootstrap non-interactively:
+
+```bash
+./install.sh --bootstrap
+```
+
+Bootstrap handles:
+
+* dependency installation
+* GitHub CLI authentication
+* cloning `dotfiles-WIN`
+* script permission updates
+* managed dotfiles restoration through `dotfiles-manager.sh`
+* diagnostics and status output
 
 ## Scripts
 
-### `diffp.sh`
+| Script                       | Purpose                                                                 |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| `install.sh`                 | Bootstrap, maintain, upgrade, and check the BashScripts-WIN environment |
+| `dotfiles-manager.sh`        | Restore, capture, and check managed dotfiles and VS Code extensions     |
+| `diffp.sh`                   | Generate a Git diff review prompt and copy it to the clipboard          |
+| `git-add-commit.sh`          | Interactive add → format → lint → commit workflow                       |
+| `git-remove-local-branch.sh` | Interactive local branch cleanup with `fzf`                             |
+| `gitdirty.sh`                | Show dirty Git repositories or working tree status                      |
+| `initproject.sh`             | Create a new project using the configured project structure             |
+| `concatenate_code.sh`        | Export source files into a Markdown document                            |
+| `concatenate_code.ps1`       | PowerShell version of `concatenate_code.sh`                             |
+| `dbserve.sh`                 | Start the configured development database server                        |
+| `update-winrar.sh`           | Reinstall or update WinRAR using `winget`                               |
 
-Creates a Git review prompt containing:
+## Required Tools
 
-- Current branch
-- Timestamp
-- Changed file summary
-- Staged and/or unstaged diff
-- Review instructions
+The installer attempts to install or verify these tools:
 
-Supports clipboard output or writing to a file.
+| Tool             | Purpose                                              |
+| ---------------- | ---------------------------------------------------- |
+| Git Bash         | Shell environment                                    |
+| Git              | Repository operations                                |
+| GitHub CLI `gh`  | GitHub authentication and Git credential integration |
+| `fzf`            | Interactive selection menus                          |
+| `ShellCheck`     | Shell script linting                                 |
+| `shfmt`          | Shell formatting                                     |
+| `tree`           | Directory tree display                               |
+| `ripgrep` / `rg` | Fast recursive search                                |
+| `jq`             | JSON processing                                      |
+| `winget`         | Primary Windows package manager                      |
+| Scoop            | Per-package fallback package manager                 |
+| Chocolatey       | Per-package fallback package manager                 |
 
----
+`winget` is preferred. If `winget` fails for a package, the installer falls back to Scoop and then Chocolatey for that package only.
 
-### `git-add-commit.sh`
+## Dotfiles Manager
 
-Interactive commit helper.
+`dotfiles-manager.sh` is the single owner of managed user configuration.
 
-Functions include:
+It manages:
 
-- Normalize line endings
-- Run configured formatters
-- Run ShellCheck
-- Show a staged summary
-- Prompt for a commit message
-- Create the commit
+| Local path                       | Dotfiles path                               |
+| -------------------------------- | ------------------------------------------- |
+| `~/.bashrc`                      | `~/dotfiles/bashrc`                         |
+| `~/.gitconfig`                   | `~/dotfiles/gitconfig`                      |
+| `~/.wslconfig`                   | `~/dotfiles/wslconfig`                      |
+| VS Code `settings.json`          | `~/dotfiles/vscode/settings.json`           |
+| VS Code extensions               | `~/dotfiles/vscode/extensions.txt`          |
+| Windows Terminal `settings.json` | `~/dotfiles/windows-terminal/settings.json` |
 
----
+Restore managed configuration:
 
-### `git-remove-local-branch.sh`
+```bash
+./dotfiles-manager.sh --restore
+```
 
-Interactive local branch cleanup.
+Check status:
 
-Functions include:
+```bash
+./dotfiles-manager.sh --status
+```
 
-- List local branches with metadata
-- Select branches using `fzf`
-- Prevent deletion of protected branches
-- Prevent deletion of the current branch
-- Confirm before deletion
-- Attempt safe deletion before offering force deletion
-- Show deletion results
+Capture the current machine configuration into the dotfiles repository:
 
----
+```bash
+./dotfiles-manager.sh --capture
+```
 
-### `initproject.sh`
+The manager attempts native Windows symlinks when possible. If symlinks are unavailable, it safely backs up the existing file and creates a copy fallback.
 
-Creates a new project directory and initializes the configured project structure.
+## Makefile Commands
 
----
+| Command          | Purpose                                                                   |
+| ---------------- | ------------------------------------------------------------------------- |
+| `make new`       | First-time setup: bootstrap installer, restore dotfiles, then show status |
+| `make bootstrap` | Run `install.sh --bootstrap`                                              |
+| `make maintain`  | Run `install.sh --maintain`                                               |
+| `make upgrade`   | Run `install.sh --upgrade`                                                |
+| `make check`     | Run `install.sh --check`                                                  |
+| `make restore`   | Run `dotfiles-manager.sh --restore`                                       |
+| `make status`    | Run `dotfiles-manager.sh --status`                                        |
+| `make capture`   | Run `dotfiles-manager.sh --capture`                                       |
+| `make chmod`     | Make repository shell scripts executable                                  |
+| `make lint`      | Run ShellCheck on shell scripts                                           |
+| `make format`    | Format shell scripts with `shfmt`                                         |
+| `make test`      | Run `bash -n` syntax checks                                               |
+| `make clean`     | Remove installer logs from the home directory                             |
 
-### `concatenate_code.sh`
+## Recommended Workflow
 
-Exports source files into a single Markdown document.
+For a new machine:
 
-Functions include:
+```bash
+git clone https://github.com/soyuz43/BashScripts-WIN.git ~/BashScripts
+cd ~/BashScripts
+make new
+```
 
-- Detect supported file types
-- Apply appropriate Markdown language fences
-- Combine files into a timestamped output file
+For regular maintenance:
 
----
+```bash
+make maintain
+```
 
-### `concatenate_code.ps1`
+For dependency upgrades:
 
-PowerShell implementation of `concatenate_code.sh`.
+```bash
+make upgrade
+```
 
----
+Before committing script changes:
 
-### `dbserve.sh`
+```bash
+make format
+make lint
+make test
+```
 
-Starts the configured development database server.
+To save updated local configuration back into `dotfiles-WIN`:
 
----
+```bash
+make capture
+cd ~/dotfiles
+git status
+git add .
+git commit -m "Update managed dotfiles"
+git push
+```
 
-### `make-executable.sh`
+## Logs
 
-Applies executable permissions to shell scripts in the repository.
+Installer logs are written to:
 
----
+```bash
+~/bashscripts-install_<timestamp>.log
+```
 
-### `update-winrar.sh`
-
-Uninstalls the current WinRAR installation and installs the latest version using `winget`.
-
-## Dependencies
-
-Recommended tools:
-
-- Git Bash
-- GitHub CLI (`gh`)
-- `fzf`
-- `ShellCheck`
-- `shfmt`
-- `winget`

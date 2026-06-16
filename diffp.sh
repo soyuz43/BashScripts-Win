@@ -7,16 +7,19 @@ export LC_ALL=C.UTF-8
 DIFFP_OUTPUT_FILE=""
 DIFFP_INCLUDE_STAGED=true
 DIFFP_INCLUDE_UNSTAGED=true
+DIFFP_INCLUDE_UNTRACKED=true
 DIFFP_COPY_TO_CLIPBOARD=true
 
 print_help() {
 	printf "Usage: diffp [options]\n"
 	printf "Options:\n"
-	printf "  --staged, -s     Only show staged changes\n"
-	printf "  --unstaged, -u   Only show unstaged changes\n"
-	printf "  --no-clip, -n    Don't copy to clipboard (print to stdout)\n"
-	printf "  --output, -o     Save to FILE instead of clipboard\n"
-	printf "  --help, -h       Show this help\n"
+	printf "  --staged, -s        Only show staged changes\n"
+	printf "  --unstaged, -u      Only show unstaged changes, including untracked files\n"
+	printf "  --tracked, -t       Only show tracked changes, excluding untracked files\n"
+	printf "  --no-untracked      Exclude untracked files\n"
+	printf "  --no-clip, -n       Don't copy to clipboard; print to stdout\n"
+	printf "  --output, -o FILE   Save to FILE instead of clipboard\n"
+	printf "  --help, -h          Show this help\n"
 }
 
 validate_git_repo() {
@@ -29,9 +32,25 @@ validate_git_repo() {
 parse_args() {
 	while [[ "$#" -gt 0 ]]; do
 		case "$1" in
-		--staged | -s) DIFFP_INCLUDE_UNSTAGED=false ;;
-		--unstaged | -u) DIFFP_INCLUDE_STAGED=false ;;
-		--no-clip | -n) DIFFP_COPY_TO_CLIPBOARD=false ;;
+		--staged | -s)
+			DIFFP_INCLUDE_STAGED=true
+			DIFFP_INCLUDE_UNSTAGED=false
+			DIFFP_INCLUDE_UNTRACKED=false
+			;;
+		--unstaged | -u)
+			DIFFP_INCLUDE_STAGED=false
+			DIFFP_INCLUDE_UNSTAGED=true
+			DIFFP_INCLUDE_UNTRACKED=true
+			;;
+		--tracked | -t)
+			DIFFP_INCLUDE_UNTRACKED=false
+			;;
+		--no-untracked)
+			DIFFP_INCLUDE_UNTRACKED=false
+			;;
+		--no-clip | -n)
+			DIFFP_COPY_TO_CLIPBOARD=false
+			;;
 		--output | -o)
 			shift
 			if [[ -z "${1:-}" || "$1" =~ ^- ]]; then
@@ -42,7 +61,7 @@ parse_args() {
 			;;
 		--help | -h)
 			print_help
-			return 0
+			return 2
 			;;
 		*)
 			printf "Error: Unknown option: %s\n" "$1" >&2
@@ -53,31 +72,49 @@ parse_args() {
 	done
 }
 
+has_untracked_changes() {
+	local untracked
+
+	if ! untracked=$(git ls-files --others --exclude-standard --directory --no-empty-directory); then
+		printf "Error: Failed to inspect untracked files\n" >&2
+		return 2
+	fi
+
+	[[ -n "${untracked//[[:space:]]/}" ]]
+}
+
 check_changes() {
 	local has_changes=false
 
-	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]] && ! git diff --no-ext-diff --quiet; then
+	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]] && ! git diff --no-ext-diff --quiet --; then
 		has_changes=true
 	fi
 
-	if [[ "$DIFFP_INCLUDE_STAGED" == true ]] && ! git diff --no-ext-diff --cached --quiet; then
+	if [[ "$DIFFP_INCLUDE_STAGED" == true ]] && ! git diff --no-ext-diff --cached --quiet --; then
 		has_changes=true
+	fi
+
+	if [[ "$DIFFP_INCLUDE_UNTRACKED" == true ]]; then
+		if has_untracked_changes; then
+			has_changes=true
+		fi
 	fi
 
 	if [[ "$has_changes" == false ]]; then
-		printf "No changes to diff (staged or unstaged)\n" >&2
+		printf "No changes to diff\n" >&2
 		return 1
 	fi
 }
 
 get_branch() {
 	local branch
+
 	if ! branch=$(git branch --show-current 2>/dev/null); then
 		printf "Error: Failed to get branch\n" >&2
 		return 1
 	fi
 
-	if [[ -z "${branch// /}" ]]; then
+	if [[ -z "${branch//[[:space:]]/}" ]]; then
 		if ! branch=$(git rev-parse --short HEAD 2>/dev/null); then
 			printf "Error: Detached HEAD and cannot resolve commit\n" >&2
 			return 1
@@ -91,12 +128,12 @@ sanitize_branch() {
 	local raw="$1"
 	local sanitized
 
-	if ! sanitized=$(printf "%s" "$raw" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]'); then
+	if ! sanitized=$(printf "%s" "$raw" | sed -E 's/[^a-zA-Z0-9]+/-/g; s/^-+//; s/-+$//' | tr '[:upper:]' '[:lower:]'); then
 		printf "Error: Failed to sanitize branch\n" >&2
 		return 1
 	fi
 
-	if [[ -z "${sanitized// /}" ]]; then
+	if [[ -z "${sanitized//[[:space:]]/}" ]]; then
 		printf "Error: Sanitized branch empty\n" >&2
 		return 1
 	fi
@@ -104,52 +141,155 @@ sanitize_branch() {
 	printf "%s" "$sanitized"
 }
 
+build_untracked_stat() {
+	local files
+
+	if ! files=$(git ls-files --others --exclude-standard); then
+		printf "Error: Failed untracked stat\n" >&2
+		return 1
+	fi
+
+	if [[ -n "${files//[[:space:]]/}" ]]; then
+		printf "Untracked:\n%s\n" "$files"
+	fi
+}
+
 build_stat() {
-	local stat="" unstaged staged
+	local stat=""
+	local unstaged=""
+	local staged=""
+	local untracked=""
 
 	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]]; then
-		if ! unstaged=$(git diff --no-ext-diff --stat); then
+		if ! unstaged=$(git diff --no-ext-diff --stat --); then
 			printf "Error: Failed unstaged stat\n" >&2
 			return 1
 		fi
-		if [[ -n "${unstaged// /}" ]]; then
-			stat+="Unstaged:\n$unstaged\n"
+		if [[ -n "${unstaged//[[:space:]]/}" ]]; then
+			stat+="Unstaged:"$'\n'"$unstaged"$'\n'
 		fi
 	fi
 
 	if [[ "$DIFFP_INCLUDE_STAGED" == true ]]; then
-		if ! staged=$(git diff --no-ext-diff --cached --stat); then
+		if ! staged=$(git diff --no-ext-diff --cached --stat --); then
 			printf "Error: Failed staged stat\n" >&2
 			return 1
 		fi
-		if [[ -n "${staged// /}" ]]; then
-			stat+="Staged:\n$staged"
+		if [[ -n "${staged//[[:space:]]/}" ]]; then
+			stat+="Staged:"$'\n'"$staged"$'\n'
 		fi
 	fi
 
-	printf "%b" "$stat"
+	if [[ "$DIFFP_INCLUDE_UNTRACKED" == true ]]; then
+		if ! untracked=$(build_untracked_stat); then
+			return 1
+		fi
+		if [[ -n "${untracked//[[:space:]]/}" ]]; then
+			stat+="$untracked"
+		fi
+	fi
+
+	printf "%s" "$stat"
+}
+
+read_untracked_files() {
+	local -n files_ref="$1"
+	# shellcheck disable=SC2034
+	if ! mapfile -d '' -t files_ref < <(git ls-files -z --others --exclude-standard); then
+		printf "Error: Failed to read untracked files\n" >&2
+		return 1
+	fi
+}
+
+diff_untracked_file() {
+	local file="$1"
+	local file_diff=""
+	local status=0
+
+	if [[ ! -e "$file" && ! -L "$file" ]]; then
+		printf "Error: Untracked path disappeared while diffing: %s\n" "$file" >&2
+		return 1
+	fi
+
+	file_diff=$(git diff --no-ext-diff --no-index -- /dev/null "$file" 2>/dev/null)
+	status=$?
+
+	if [[ "$status" -gt 1 ]]; then
+		printf "Error: Failed untracked diff for: %s\n" "$file" >&2
+		return 1
+	fi
+
+	if [[ -z "${file_diff//[[:space:]]/}" ]]; then
+		printf "diff --git a/%s b/%s\nnew file mode 100644\n" "$file" "$file"
+		return
+	fi
+
+	printf "%s\n" "$file_diff"
+}
+
+build_untracked_diff() {
+	local -a files=()
+	local file=""
+	local part=""
+	local output=""
+
+	if ! read_untracked_files files; then
+		return 1
+	fi
+
+	if [[ "${#files[@]}" -eq 0 ]]; then
+		return
+	fi
+
+	output+=$'\n\nUntracked files:\n'
+
+	for file in "${files[@]}"; do
+		if [[ -z "$file" ]]; then
+			continue
+		fi
+
+		if ! part=$(diff_untracked_file "$file"); then
+			return 1
+		fi
+
+		output+=$'\n'"$part"$'\n'
+	done
+
+	printf "%s" "$output"
 }
 
 build_diff() {
-	local diff="" u s
+	local diff=""
+	local unstaged=""
+	local staged=""
+	local untracked=""
 
 	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]]; then
-		if ! u=$(git diff); then
+		if ! unstaged=$(git diff --no-ext-diff --); then
 			printf "Error: Failed unstaged diff\n" >&2
 			return 1
 		fi
-		if [[ -n "${u// /}" ]]; then
-			diff+=$'\n\nUnstaged changes:\n'"$u"
+		if [[ -n "${unstaged//[[:space:]]/}" ]]; then
+			diff+=$'\n\nUnstaged changes:\n'"$unstaged"
 		fi
 	fi
 
 	if [[ "$DIFFP_INCLUDE_STAGED" == true ]]; then
-		if ! s=$(git diff --no-ext-diff --cached); then
+		if ! staged=$(git diff --no-ext-diff --cached --); then
 			printf "Error: Failed staged diff\n" >&2
 			return 1
 		fi
-		if [[ -n "${s// /}" ]]; then
-			diff+=$'\n\nStaged changes:\n'"$s"
+		if [[ -n "${staged//[[:space:]]/}" ]]; then
+			diff+=$'\n\nStaged changes:\n'"$staged"
+		fi
+	fi
+
+	if [[ "$DIFFP_INCLUDE_UNTRACKED" == true ]]; then
+		if ! untracked=$(build_untracked_diff); then
+			return 1
+		fi
+		if [[ -n "${untracked//[[:space:]]/}" ]]; then
+			diff+="$untracked"
 		fi
 	fi
 
@@ -157,7 +297,12 @@ build_diff() {
 }
 
 build_output() {
-	local branch sanitized stat diff timestamp output
+	local branch=""
+	local sanitized=""
+	local stat=""
+	local diff=""
+	local timestamp=""
+	local output=""
 
 	if ! branch=$(get_branch); then
 		return 1
@@ -175,7 +320,10 @@ build_output() {
 		return 1
 	fi
 
-	timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+	if ! timestamp=$(date '+%Y-%m-%d %H:%M:%S'); then
+		printf "Error: Failed to create timestamp\n" >&2
+		return 1
+	fi
 
 	output=$(
 		cat <<EOF
@@ -196,7 +344,6 @@ You are reviewing a git diff. Operate as a strict, signal-maximizing reviewer.
 4. Maintainability improvements
 5. Ignore pure formatting changes unless they affect behavior
 
-## Decision
 ## Decision
 - Output EXACTLY one:
   - BLOCK
@@ -248,7 +395,7 @@ BLOCKED: Critical bugs must be fixed before creating a PR
 - The Decision section is authoritative:
   - "BLOCK" → no further output allowed
   - "ALLOW" → full output required
-  
+
 ## Files Changed
 \`\`\`
 $stat
@@ -375,6 +522,7 @@ Notes:
 - Escape ALL double quotes using \"
 - Escape ALL dollar signs using \$
 - Do NOT use unescaped backticks, quotes, or shell expansions inside the PR body
+
 ## Diff
 $diff
 EOF
@@ -386,9 +534,9 @@ EOF
 write_output() {
 	local content="$1"
 
-	if [[ -n "${DIFFP_OUTPUT_FILE// /}" ]]; then
+	if [[ -n "${DIFFP_OUTPUT_FILE//[[:space:]]/}" ]]; then
 		if ! printf "%s\n" "$content" >"$DIFFP_OUTPUT_FILE"; then
-			printf "Error: Failed to write file\n" >&2
+			printf "Error: Failed to write file: %s\n" "$DIFFP_OUTPUT_FILE" >&2
 			return 1
 		fi
 		printf "Saved: %s\n" "$DIFFP_OUTPUT_FILE"
@@ -401,21 +549,25 @@ write_output() {
 				printf "Error: Clipboard copy failed\n" >&2
 				return 1
 			fi
-		else
-			printf "Error: Clipboard tools missing\n" >&2
-			return 1
+			printf "[OK] Copied to clipboard\n"
+			return
 		fi
 
-		printf "[OK] Copied to clipboard\n"
-		return
+		printf "Error: Clipboard tools missing; use --no-clip or --output FILE\n" >&2
+		return 1
 	fi
 
 	printf "%s\n" "$content"
 }
 
 main() {
+	local output=""
+
 	if ! parse_args "$@"; then
-		return $?
+		case "$?" in
+		2) return 0 ;;
+		*) return 1 ;;
+		esac
 	fi
 
 	if ! validate_git_repo; then
@@ -426,7 +578,6 @@ main() {
 		return 1
 	fi
 
-	local output
 	if ! output=$(build_output); then
 		return 1
 	fi
