@@ -1568,20 +1568,48 @@ print_package_outcome_summary() {
 
 # ---------- Script permissions ----------
 chmod_scripts() {
-	info "Updating executable permissions for repository shell scripts."
+	local file
+	local first_line
+	local failed
+	local file_list
+
+	failed=0
+	file_list="$TEMP_DIR/chmod-script-files.list"
+
+	info "Updating executable permissions for repository scripts."
 
 	if ! find "$REPO_DIR" \
 		-maxdepth 1 \
 		-type f \
-		-name '*.sh' \
-		-exec chmod +x -- {} +; then
-		err "Unable to update one or more shell-script permissions."
+		-print0 >"$file_list"; then
+		err "Unable to enumerate repository scripts."
 		return 1
 	fi
 
-	ok "Shell-script permissions updated."
-}
+	while IFS= read -r -d '' file; do
+		first_line=""
 
+		if ! IFS= read -r first_line <"$file"; then
+			continue
+		fi
+
+		if [[ "$first_line" != '#!'* ]]; then
+			continue
+		fi
+
+		if ! chmod +x -- "$file"; then
+			err "Unable to make script executable: $file"
+			failed=$((failed + 1))
+		fi
+	done <"$file_list"
+
+	if ((failed > 0)); then
+		err "$failed script permission update(s) failed."
+		return 1
+	fi
+
+	ok "Script permissions updated."
+}
 # ---------- GitHub authentication ----------
 require_bootstrap_commands() {
 	local command_name

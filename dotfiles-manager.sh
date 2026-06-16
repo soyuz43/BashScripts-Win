@@ -951,9 +951,9 @@ capture_managed_file() {
 	if atomic_copy_to_repository "$target" "$source"; then
 		CAPTURE_SUCCESS_COUNT=$((CAPTURE_SUCCESS_COUNT + 1))
 		return 0
+	else
+		copy_status=$?
 	fi
-
-	copy_status=$?
 
 	if ((copy_status == 2)); then
 		if [[ "$required" == "required" ]]; then
