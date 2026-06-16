@@ -1,101 +1,44 @@
 # BashScripts-WIN
 
-Shell scripts used by the Git Bash environment in dotfiles-WIN.
+Utility scripts for the Git Bash environment used by `dotfiles-WIN`.
+
+## Companion Repository
+
+Git Bash configuration and aliases:
+
+https://github.com/soyuz43/dotfiles-WIN
 
 ## Scripts
 
-### `diffp.sh`
+| Script | Purpose |
+|---|---|
+| `diffp.sh` | Generate a Git diff review prompt and copy it to the clipboard |
+| `git-add-commit.sh` | Interactive add → format → lint → commit workflow (`bet`) |
+| `git-remove-local-branch.sh` | Interactive local branch cleanup with `fzf` (`slay`) |
+| `initproject.sh` | Create a new project using the configured project structure |
+| `concatenate_code.sh` | Export source files into a Markdown document |
+| `concatenate_code.ps1` | PowerShell version of `concatenate_code.sh` |
+| `dbserve.sh` | Start the configured development database server |
+| `update-winrar.sh` | Reinstall the latest WinRAR version using `winget` |
+| `install.sh` | Bootstrap the BashScripts-WIN environment, install dependencies, and configure permissions |
 
-Creates a Git review prompt containing:
+## Required Tools
 
-- Current branch
-- Timestamp
-- Changed file summary
-- Staged and/or unstaged diff
-- Review instructions
+| Tool | Purpose |
+|---|---|
+| Git Bash | Shell environment |
+| `gh` | GitHub CLI integration |
+| `fzf` | Interactive selection menus |
+| `ShellCheck` | Shell script linting |
+| `shfmt` | Shell formatting |
+| `winget` | Windows package installation and updates |
 
-Supports clipboard output or writing to a file.
+## Installation
 
----
+```bash
+git clone git@github.com:soyuz43/BashScripts-WIN.git ~/BashScripts
+cd ~/BashScripts
+./install.sh
+```
 
-### `git-add-commit.sh`
-
-Interactive commit helper.
-
-Functions include:
-
-- Normalize line endings
-- Run configured formatters
-- Run ShellCheck
-- Show a staged summary
-- Prompt for a commit message
-- Create the commit
-
----
-
-### `git-remove-local-branch.sh`
-
-Interactive local branch cleanup.
-
-Functions include:
-
-- List local branches with metadata
-- Select branches using `fzf`
-- Prevent deletion of protected branches
-- Prevent deletion of the current branch
-- Confirm before deletion
-- Attempt safe deletion before offering force deletion
-- Show deletion results
-
----
-
-### `initproject.sh`
-
-Creates a new project directory and initializes the configured project structure.
-
----
-
-### `concatenate_code.sh`
-
-Exports source files into a single Markdown document.
-
-Functions include:
-
-- Detect supported file types
-- Apply appropriate Markdown language fences
-- Combine files into a timestamped output file
-
----
-
-### `concatenate_code.ps1`
-
-PowerShell implementation of `concatenate_code.sh`.
-
----
-
-### `dbserve.sh`
-
-Starts the configured development database server.
-
----
-
-### `make-executable.sh`
-
-Applies executable permissions to shell scripts in the repository.
-
----
-
-### `update-winrar.sh`
-
-Uninstalls the current WinRAR installation and installs the latest version using `winget`.
-
-## Dependencies
-
-Recommended tools:
-
-- Git Bash
-- GitHub CLI (`gh`)
-- `fzf`
-- `ShellCheck`
-- `shfmt`
-- `winget`
+The installer checks dependencies and provides guidance for connecting `dotfiles-WIN`.
