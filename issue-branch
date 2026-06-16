@@ -1,0 +1,227 @@
+#!/usr/bin/env bash
+#===============================================================================
+# issue-branch.sh
+#===============================================================================
+#
+# Purpose:
+#   Create a well‑named Git feature or fix branch directly from a GitHub issue.
+#   The script fetches the issue title and labels via `gh`, then generates a
+#   branch name following the convention:
+#
+#       <type>/<issue-number>-<sanitised-title>
+#
+#   where <type> is:
+#     • "feat" – if the issue has no "bug" label
+#     • "fix"  – if the issue has a label containing "bug"
+#
+#   The title is lowercased, stripped of special characters, and truncated to
+#   a reasonable length for readability.
+#
+# Usage:
+#   bash issue-branch.sh [options] [<issue-number>]
+#
+# Options:
+#   --push        After creating the branch, push it to origin and set
+#                 upstream tracking.
+#   --dry-run     Print the commands that would be executed without actually
+#                 running them. Useful for testing.
+#   --help, -h    Display this help message and exit.
+#
+# Arguments:
+#   <issue-number>   The GitHub issue number (e.g., 42). If omitted, the
+#                    script will prompt for it interactively.
+#
+# Examples:
+#   # Create a local branch for issue 123
+#   bash issue-branch.sh 123
+#
+#   # Create and push a branch for issue 42
+#   bash issue-branch.sh --push 42
+#
+#   # Interactive mode
+#   bash issue-branch.sh
+#
+#   # Dry-run to see what would happen for issue 99
+#   bash issue-branch.sh --dry-run 99
+#
+# Requirements:
+#   - Inside a Git repository.
+#   - GitHub CLI (`gh`) installed and authenticated (`gh auth login`).
+#   - `jq` available (part of the BashScripts dependency set).
+#
+# Author:   soyuz43
+# Created:  2026‑06‑16
+#===============================================================================
+
+set -euo pipefail
+
+# ---------- ANSI helpers ----------
+BOLD=""; DIM=""; GREEN=""; YELLOW=""; RED=""; BLUE=""; RESET=""
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+    BOLD=$'\033[1m'
+    DIM=$'\033[2m'
+    GREEN=$'\033[1;32m'
+    YELLOW=$'\033[1;33m'
+    RED=$'\033[1;31m'
+    BLUE=$'\033[1;34m'
+    RESET=$'\033[0m'
+fi
+
+# ---------- Logging ----------
+LOG_FILE="$HOME/.local/share/bashscripts/issue-branch.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+log_action() {
+    printf "[%s] %s\n" "$(date -Iseconds)" "$*" >> "$LOG_FILE"
+}
+
+# ---------- Help ----------
+usage() {
+    # Display the header comment up to the first empty line
+    sed -n '/^#==/,/^$/p' "$0" | sed '1d;s/^#//;s/^ //'
+    exit 0
+}
+
+# ---------- Dry‑run helper ----------
+DRY_RUN=0
+run_cmd() {
+    if (( DRY_RUN )); then
+        printf "%b[DRY RUN]%b %s\n" "$DIM" "$RESET" "$*"
+    else
+        "$@"
+    fi
+}
+
+# ---------- Safety checks ----------
+ensure_inside_git_repo() {
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        printf "%b[ERROR] Not inside a Git repository.%b\n" "$RED" "$RESET" >&2
+        exit 1
+    fi
+}
+
+ensure_gh_authenticated() {
+    if ! command -v gh &>/dev/null; then
+        printf "%b[ERROR] GitHub CLI not found. Install: https://cli.github.com/%b\n" "$RED" "$RESET" >&2
+        exit 1
+    fi
+    if ! gh auth status &>/dev/null; then
+        printf "%b[ERROR] GitHub CLI is not authenticated. Run 'gh auth login'.%b\n" "$RED" "$RESET" >&2
+        exit 1
+    fi
+}
+
+# ---------- Branch name generation ----------
+sanitize_title() {
+    local title="$1"
+    title="${title,,}"
+    title="${title//[^a-z0-9]/-}"
+    title="${title##-}"
+    title="${title%%-}"
+    while [[ "$title" == *--* ]]; do title="${title//--/-}"; done
+    printf "%s" "$title"
+}
+
+determine_prefix_from_labels() {
+    local labels="$1"
+    if [[ "$labels" == *"bug"* ]]; then
+        printf "fix"
+    else
+        printf "feat"
+    fi
+}
+
+generate_branch_name() {
+    local issue_number="$1"
+    local title="$2"
+    local labels="$3"
+
+    local prefix
+    prefix=$(determine_prefix_from_labels "$labels")
+    local slug
+    slug=$(sanitize_title "$title")
+    slug="${slug:0:50}"
+    slug="${slug%%-}"
+
+    printf "%s/%s-%s" "$prefix" "$issue_number" "$slug"
+}
+
+# ---------- Main workflow ----------
+main() {
+    local push_flag=0
+    local issue_number=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --help | -h) usage ;;
+            --push) push_flag=1 ;;
+            --dry-run) DRY_RUN=1 ;;
+            -*) printf "%b[ERROR] Unknown option: %s%b\n" "$RED" "$1" "$RESET" >&2; usage ;;
+            *) issue_number="$1" ;;
+        esac
+        shift
+    done
+
+    ensure_inside_git_repo
+    ensure_gh_authenticated
+
+    if [[ -z "$issue_number" ]]; then
+        read -rp "GitHub issue number: " issue_number
+    fi
+
+    if [[ ! "$issue_number" =~ ^[0-9]+$ ]]; then
+        printf "%b[ERROR] Invalid issue number: %s%b\n" "$RED" "$issue_number" "$RESET" >&2
+        exit 1
+    fi
+
+    printf "%bFetching issue #%s details…%b\n" "$BLUE" "$issue_number" "$RESET"
+    local issue_data
+    issue_data=$(gh issue view "$issue_number" --json number,title,labels --jq '.' 2>/dev/null) || {
+        printf "%b[ERROR] Could not fetch issue #%s. Is it a valid issue number?%b\n" "$RED" "$issue_number" "$RESET" >&2
+        exit 1
+    }
+
+    local title labels
+    title=$(echo "$issue_data" | jq -r '.title')
+    labels=$(echo "$issue_data" | jq -r '.labels[].name' | tr '\n' ' ')
+
+    printf "  Title: %s\n" "$title"
+    printf "  Labels: %s\n" "${labels:-none}"
+
+    local branch_name
+    branch_name=$(generate_branch_name "$issue_number" "$title" "$labels")
+    printf "%bBranch name: %b%s%b\n" "$BOLD" "$GREEN" "$branch_name" "$RESET"
+
+    # Check if branch already exists locally or on remote
+    if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+        printf "%b[WARN] Branch '%s' already exists locally.%b\n" "$YELLOW" "$branch_name" "$RESET"
+        run_cmd git switch "$branch_name"
+        log_action "Switched to existing local branch $branch_name"
+    elif git remote get-url origin &>/dev/null && git ls-remote --exit-code --heads origin "$branch_name" &>/dev/null; then
+        printf "%b[WARN] Branch '%s' already exists on remote.%b\n" "$YELLOW" "$branch_name" "$RESET"
+        read -rp "Fetch and check it out? [y/N] " answer
+        if [[ "${answer,,}" == y || "${answer,,}" == yes ]]; then
+            run_cmd git fetch origin "$branch_name"
+            run_cmd git switch -c "$branch_name" "origin/$branch_name"
+            log_action "Checked out remote branch $branch_name"
+        else
+            printf "%b[INFO] Aborted.%b\n" "$BLUE" "$RESET"
+            exit 0
+        fi
+    else
+        run_cmd git switch -c "$branch_name"
+        log_action "Created branch $branch_name"
+    fi
+
+    if (( push_flag )); then
+        run_cmd git push -u origin "$branch_name"
+        printf "%b[ OK ]%b Pushed '%s' and set upstream.\n" "$GREEN" "$RESET" "$branch_name"
+        log_action "Pushed branch $branch_name to origin"
+    else
+        printf "%b[INFO] Branch is local only. Use 'git push -u origin %s' when ready.%b\n" "$BLUE" "$RESET" "$branch_name"
+    fi
+
+    printf "%b[ OK ]%b Now working on branch: %s\n" "$GREEN" "$RESET" "$branch_name"
+}
+
+main "$@"
