@@ -1,0 +1,472 @@
+#!/usr/bin/env bash
+# provenance
+# Browse repository history and create a new branch from a selected commit.
+
+set -euo pipefail
+
+# =========================
+# Configuration
+# =========================
+
+HISTORY_LIMIT=1000
+HISTORY_SCOPE="all"
+ALLOW_DIRTY=false
+BRANCH_SUFFIX="-provenance"
+TEMP_HISTORY_FILE=""
+
+# =========================
+# Colors
+# =========================
+
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[1;36m'
+DIM='\033[2m'
+RESET='\033[0m'
+
+# =========================
+# Output helpers
+# =========================
+
+die() {
+	printf "%bError:%b %s\n" "$RED" "$RESET" "$*" >&2
+	exit 1
+}
+
+warn() {
+	printf "%bWarning:%b %s\n" "$YELLOW" "$RESET" "$*" >&2
+}
+
+print_help() {
+	cat <<'EOF'
+provenance — browse Git history and branch from a selected commit
+
+Usage:
+  provenance [options]
+
+Options:
+  --all
+      Show commits from all local and remote refs.
+      This is the default.
+
+  --current
+      Show only commits reachable from the current branch.
+
+  --limit <number>
+      Maximum number of commits to load.
+      Default: 1000
+
+  --allow-dirty
+      Permit branch creation with uncommitted changes.
+      Changes may carry into the new branch.
+
+  -h, --help
+      Show this help.
+
+Controls:
+  Up/Down
+      Move between commits.
+
+  Enter
+      Select a commit.
+
+  Esc
+      Cancel.
+
+  Ctrl-P
+      Toggle the commit preview.
+
+Branch naming:
+  The suffix "-provenance" is automatically added to branches
+  created by this command.
+
+Example:
+  Input:  restore-old-parser
+  Result: restore-old-parser-provenance
+EOF
+}
+
+# =========================
+# Cleanup
+# =========================
+
+cleanup() {
+	if [[ -n "${TEMP_HISTORY_FILE:-}" ]]; then
+		rm -f -- "$TEMP_HISTORY_FILE"
+	fi
+}
+
+trap cleanup EXIT
+
+# =========================
+# Argument parsing
+# =========================
+
+parse_arguments() {
+	while (($#)); do
+		case "$1" in
+		--all)
+			HISTORY_SCOPE="all"
+			;;
+
+		--current)
+			HISTORY_SCOPE="current"
+			;;
+
+		--allow-dirty)
+			ALLOW_DIRTY=true
+			;;
+
+		--limit)
+			shift
+			(($#)) || die "--limit requires a number."
+
+			if [[ ! "$1" =~ ^[1-9][0-9]*$ ]]; then
+				die "Invalid history limit: $1"
+			fi
+
+			HISTORY_LIMIT="$1"
+			;;
+
+		-h | --help)
+			print_help
+			exit 0
+			;;
+
+		*)
+			die "Unknown option: $1"
+			;;
+		esac
+
+		shift
+	done
+}
+
+# =========================
+# Environment validation
+# =========================
+
+require_command() {
+	command -v "$1" >/dev/null 2>&1 ||
+		die "Required command not found: $1"
+}
+
+enter_repository_root() {
+	local repo_root
+
+	repo_root=$(git rev-parse --show-toplevel 2>/dev/null) ||
+		die "Not a Git repository."
+
+	cd "$repo_root"
+}
+
+repository_is_dirty() {
+	[[ -n "$(git status --porcelain --untracked-files=normal)" ]]
+}
+
+# =========================
+# History construction
+# =========================
+
+build_history() {
+	local output_file="$1"
+	local -a scope_args=()
+
+	if [[ "$HISTORY_SCOPE" == "all" ]]; then
+		scope_args+=(--all)
+	else
+		scope_args+=(HEAD)
+	fi
+
+	git log \
+		"${scope_args[@]}" \
+		--graph \
+		--decorate \
+		--color=always \
+		--date=short \
+		--max-count="$HISTORY_LIMIT" \
+		--pretty=format:'%x1f%H%x1f%C(auto)%h%Creset%x1f%ad%x1f%an%x1f%C(auto)%D%Creset%x1f%s' |
+		awk -F '\037' '
+			NF >= 7 {
+				graph = $1
+				full_hash = $2
+				short_hash = $3
+				date = $4
+				author = $5
+				refs = $6
+				subject = $7
+
+				gsub(/\t/, " ", subject)
+				gsub(/\t/, " ", author)
+
+				if (refs != "") {
+					refs = "  " refs
+				}
+
+				printf "%s\t%s%s  %s  %-18s  %s%s\n",
+					full_hash,
+					graph,
+					short_hash,
+					date,
+					author,
+					subject,
+					refs
+			}
+		' >"$output_file"
+
+	[[ -s "$output_file" ]] ||
+		die "No commits were found."
+}
+
+select_commit() {
+	local history_file="$1"
+	local selection
+
+	if ! selection=$(
+		fzf \
+			--ansi \
+			--height=80% \
+			--border=sharp \
+			--layout=reverse \
+			--delimiter=$'\t' \
+			--with-nth=2.. \
+			--nth=2.. \
+			--info=inline \
+			--prompt="Commit > " \
+			--pointer="▌" \
+			--header=$'provenance\nRepository history — Enter to branch · Esc to cancel · Ctrl-P to toggle preview' \
+			--preview='git --no-pager show --color=always --stat --summary --format=fuller {1}' \
+			--preview-window='right,55%,wrap' \
+			--bind='ctrl-p:toggle-preview' \
+			<"$history_file"
+	); then
+		return 1
+	fi
+
+	printf "%s" "${selection%%$'\t'*}"
+}
+
+# =========================
+# Commit selection
+# =========================
+
+print_commit_selection() {
+	local commit="$1"
+	local short_hash
+	local date
+	local author
+	local subject
+	local refs
+
+	short_hash=$(git rev-parse --short "$commit")
+	date=$(git show -s --date=short --format='%ad' "$commit")
+	author=$(git show -s --format='%an' "$commit")
+	subject=$(git show -s --format='%s' "$commit")
+	refs=$(git show -s --format='%D' "$commit")
+
+	printf "\n%bSelected commit%b\n" "$CYAN" "$RESET"
+	printf "  Hash:    %s\n" "$short_hash"
+	printf "  Date:    %s\n" "$date"
+	printf "  Author:  %s\n" "$author"
+	printf "  Subject: %s\n" "$subject"
+
+	if [[ -n "$refs" ]]; then
+		printf "  Refs:    %s\n" "$refs"
+	fi
+}
+
+confirm_branch_creation() {
+	local decision
+
+	while true; do
+		printf "\n%bCreate a new branch from this commit?%b ([y]/n): " \
+			"$YELLOW" "$RESET"
+		IFS= read -r decision
+
+		case "${decision:-y}" in
+		y | Y | yes | YES | Yes)
+			return 0
+			;;
+
+		n | N | no | NO | No)
+			printf "%bNo branch was created.%b\n" "$DIM" "$RESET"
+			return 1
+			;;
+
+		*)
+			printf "%bInvalid response.%b Enter y, n, or press Enter for yes.\n" \
+				"$RED" "$RESET" >&2
+			;;
+		esac
+	done
+}
+
+# =========================
+# Branch naming
+# =========================
+
+slugify() {
+	local value="$1"
+
+	printf "%s" "$value" |
+		tr '[:upper:]' '[:lower:]' |
+		sed -E \
+			-e 's/[^a-z0-9._-]+/-/g' \
+			-e 's/^-+//' \
+			-e 's/-+$//' \
+			-e 's/-+/-/g' |
+		cut -c1-48
+}
+
+suggest_branch_base() {
+	local commit="$1"
+	local subject
+	local slug
+	local short_hash
+
+	subject=$(git show -s --format='%s' "$commit")
+	slug=$(slugify "$subject")
+	short_hash=$(git rev-parse --short "$commit")
+
+	if [[ -n "$slug" ]]; then
+		printf "%s" "$slug"
+	else
+		printf "historical-%s" "$short_hash"
+	fi
+}
+
+append_branch_suffix() {
+	local branch_base="$1"
+
+	if [[ "$branch_base" == *"$BRANCH_SUFFIX" ]]; then
+		printf "%s" "$branch_base"
+	else
+		printf "%s%s" "$branch_base" "$BRANCH_SUFFIX"
+	fi
+}
+
+prompt_for_branch_name() {
+	local commit="$1"
+	local suggested_base
+	local branch_base
+	local branch_name
+
+	suggested_base=$(suggest_branch_base "$commit")
+
+	while true; do
+		# Human-facing prompts must go to stderr because stdout is
+		# captured by the caller as the function's return value.
+		printf "\n%bEnter a name for the new branch%b [%s]: " \
+			"$CYAN" "$RESET" "$suggested_base" >&2
+
+		IFS= read -r branch_base
+		branch_base=${branch_base:-$suggested_base}
+
+		case "$branch_base" in
+		q | quit | exit)
+			return 1
+			;;
+		esac
+
+		branch_name=$(append_branch_suffix "$branch_base")
+
+		if ! git check-ref-format --branch "$branch_name" >/dev/null 2>&1; then
+			printf "%bInvalid branch name:%b %s\n" \
+				"$RED" "$RESET" "$branch_name" >&2
+			continue
+		fi
+
+		if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+			printf "%bBranch already exists:%b %s\n" \
+				"$YELLOW" "$RESET" "$branch_name" >&2
+			continue
+		fi
+
+		printf "\n%bBranch to create:%b %s\n" \
+			"$CYAN" "$RESET" "$branch_name" >&2
+
+		# This must be the function's only stdout output.
+		printf "%s" "$branch_name"
+		return 0
+	done
+}
+
+# =========================
+# Branch creation
+# =========================
+
+create_branch() {
+	local branch_name="$1"
+	local commit="$2"
+
+	if repository_is_dirty; then
+		if [[ "$ALLOW_DIRTY" != true ]]; then
+			printf "\n%bBranch creation blocked:%b the working tree contains uncommitted changes.\n" \
+				"$RED" "$RESET"
+			printf "Commit, stash, or discard the changes before continuing.\n"
+			printf "Use %bprovenance --allow-dirty%b to override this protection.\n" \
+				"$CYAN" "$RESET"
+			return 1
+		fi
+
+		warn "Uncommitted changes may carry into the new branch."
+	fi
+
+	printf "\n%bCreating branch:%b %s\n" \
+		"$CYAN" "$RESET" "$branch_name"
+
+	if ! git switch -c "$branch_name" "$commit"; then
+		printf "\n%bBranch creation failed.%b\n" "$RED" "$RESET"
+		return 1
+	fi
+
+	printf "\n%bBranch created successfully.%b\n" "$GREEN" "$RESET"
+	printf "  Branch:  %s\n" "$branch_name"
+	printf "  Commit:  %s\n" "$(git rev-parse --short HEAD)"
+	printf "  Subject: %s\n" "$(git show -s --format='%s' HEAD)"
+}
+
+# =========================
+# Main
+# =========================
+
+main() {
+	local selected_commit
+	local branch_name
+
+	parse_arguments "$@"
+
+	require_command git
+	require_command fzf
+	require_command awk
+	require_command sed
+
+	enter_repository_root
+
+	TEMP_HISTORY_FILE=$(mktemp) ||
+		die "Could not create temporary history file."
+
+	build_history "$TEMP_HISTORY_FILE"
+
+	if ! selected_commit=$(select_commit "$TEMP_HISTORY_FILE"); then
+		printf "%bSelection canceled.%b\n" "$DIM" "$RESET"
+		return 0
+	fi
+
+	git cat-file -e "${selected_commit}^{commit}" 2>/dev/null ||
+		die "The selected object is not a valid commit."
+
+	print_commit_selection "$selected_commit"
+
+	confirm_branch_creation || return 0
+
+	if ! branch_name=$(prompt_for_branch_name "$selected_commit"); then
+		printf "%bBranch creation canceled.%b\n" "$DIM" "$RESET"
+		return 0
+	fi
+
+	create_branch "$branch_name" "$selected_commit"
+}
+
+main "$@"
