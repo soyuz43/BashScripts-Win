@@ -361,7 +361,7 @@ create_real_bashrc_symlink() {
 	link_win="$(to_windows_path "$link")"
 
 	if has_cmd powershell.exe; then
-	# shellcheck disable=SC2016
+		# shellcheck disable=SC2016
 		powershell.exe -NoProfile -Command '
 			param($Target, $Link)
 			New-Item -ItemType SymbolicLink -Path $Link -Target $Target -Force | Out-Null

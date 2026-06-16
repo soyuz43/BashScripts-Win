@@ -28,15 +28,16 @@ check_branch() {
 fix_crlf() {
 	echo -e "\n\e[1;3;36mNormalizing line endings (LF)...\e[0m"
 	git ls-files -z --cached --others --exclude-standard '*.sh' | while IFS= read -r -d '' file; do
-		sed -i 's/\r$//' "$file"
+		if [[ -f "$file" ]]; then # <-- only if file exists
+			sed -i 's/\r$//' "$file"
+		fi
 	done
 }
 
 detect_crlf() {
 	local bad_files=()
-
 	while IFS= read -r -d '' file; do
-		if grep -q $'\r' "$file"; then
+		if [[ -f "$file" ]] && grep -q $'\r' "$file"; then # <-- skip missing
 			bad_files+=("$file")
 		fi
 	done < <(git ls-files -z --cached --others --exclude-standard '*.sh')
@@ -165,6 +166,11 @@ main() {
 	format_shell
 
 	git add .
+
+	if git diff --cached --quiet; then
+		echo -e "\e[1;33mNo changes to commit.\e[0m"
+		return 0
+	fi
 
 	run_shellcheck
 
