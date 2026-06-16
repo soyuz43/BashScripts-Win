@@ -30,12 +30,20 @@ readonly DOTFILES_REPO_SSH_URL="ssh://git@github.com/soyuz43/dotfiles-WIN.git"
 readonly -a PACKAGES=(
 	"Git|git|Git.Git|git|git"
 	"GitHub CLI|gh|GitHub.cli|gh|gh"
+	"Visual Studio Code|code|Microsoft.VisualStudioCode|vscode|vscode"
 	"fzf|fzf|junegunn.fzf|fzf|fzf"
+	"ripgrep|rg|BurntSushi.ripgrep.MSVC|ripgrep|ripgrep"
+	"fd|fd|sharkdp.fd|fd|fd"
+	"bat|bat|sharkdp.bat|bat|bat"
+	"delta|delta|dandavison.delta|delta|delta"
+	"jq|jq|jqlang.jq|jq|jq"
+	"tree|tree|GnuWin32.Tree|tree|tree"
 	"shfmt|shfmt|mvdan.shfmt|shfmt|shfmt"
 	"ShellCheck|shellcheck|koalaman.shellcheck|shellcheck|shellcheck"
-	"tree|tree|GnuWin32.Tree|tree|tree"
-	"ripgrep|rg|BurntSushi.ripgrep.MSVC|ripgrep|ripgrep"
-	"jq|jq|jqlang.jq|jq|jq"
+	"Git LFS|git-lfs|GitHub.GitLFS|git-lfs|git-lfs"
+	"Node.js LTS|node|OpenJS.NodeJS.LTS|nodejs-lts|nodejs-lts"
+	"Python|python|Python.Python.3.12|python|python"
+	"pipx|pipx|pipx.pipx|pipx|pipx"
 )
 
 readonly -a REQUIRED_CORE_COMMANDS=(
