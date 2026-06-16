@@ -1,0 +1,401 @@
+#!/usr/bin/env bash
+# genealogy
+# Browse the Git reflog (your personal timeline) and recover lost commits
+# by creating a new branch or cherry‑picking them into the current branch.
+#
+# The reflog records every movement of HEAD — commits, checkouts, resets,
+# rebases, and even abandoned experiments.  genealogy surfaces these so you
+# can resurrect any state that was once visited.
+#
+# Usage:
+#   genealogy [options]
+#
+# Options:
+#   --branch
+#       Create a new branch from the selected commit.
+#       This is the default behaviour.
+#
+#   --cherry-pick
+#       Apply the selected commit directly onto the current branch
+#       (git cherry‑pick).  No new branch is created.
+#
+#   --limit <number>
+#       Maximum number of reflog entries to show.
+#       Default: 500
+#
+#   --suffix <string>
+#       String appended to every branch name created by this command.
+#       Default: -recovered
+#
+#   --allow-dirty
+#       Permit branch creation or cherry‑picking with uncommitted changes.
+#       Use with care; changes may carry over or conflict.
+#
+#   -h, --help
+#       Show this help and exit.
+
+set -euo pipefail
+
+# =========================
+# Configuration
+# =========================
+REFLOG_LIMIT=500
+BRANCH_SUFFIX="-recovered"
+ALLOW_DIRTY=false
+OPERATION="branch"   # "branch" or "cherry-pick"
+
+# =========================
+# Colors
+# =========================
+RED='\033[1;31m'
+GREEN='\033[1;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[1;36m'
+DIM='\033[2m'
+RESET='\033[0m'
+
+# =========================
+# Output helpers
+# =========================
+die() {
+    printf "%bError:%b %s\n" "$RED" "$RESET" "$*" >&2
+    exit 1
+}
+
+warn() {
+    printf "%bWarning:%b %s\n" "$YELLOW" "$RESET" "$*" >&2
+}
+
+print_help() {
+    # Display the header comment block of this script
+    sed -n '/^#!/,/^$/p' "$0" | sed '1d;s/^#//;s/^ //'
+    exit 0
+}
+
+# =========================
+# Cleanup
+# =========================
+cleanup() {
+    if [[ -n "${TEMP_REFLOT_FILE:-}" ]]; then
+        rm -f -- "$TEMP_REFLOT_FILE"
+    fi
+}
+trap cleanup EXIT
+
+# =========================
+# Argument parsing
+# =========================
+parse_arguments() {
+    while (($#)); do
+        case "$1" in
+            --branch)
+                OPERATION="branch"
+                ;;
+            --cherry-pick)
+                OPERATION="cherry-pick"
+                ;;
+            --allow-dirty)
+                ALLOW_DIRTY=true
+                ;;
+            --limit)
+                shift
+                (($#)) || die "--limit requires a number."
+                if [[ ! "$1" =~ ^[1-9][0-9]*$ ]]; then
+                    die "Invalid limit: $1"
+                fi
+                REFLOG_LIMIT="$1"
+                ;;
+            --suffix)
+                shift
+                (($#)) || die "--suffix requires a string."
+                BRANCH_SUFFIX="$1"
+                ;;
+            -h | --help)
+                print_help
+                ;;
+            *)
+                die "Unknown option: $1"
+                ;;
+        esac
+        shift
+    done
+}
+
+# =========================
+# Environment validation
+# =========================
+require_command() {
+    command -v "$1" >/dev/null 2>&1 ||
+        die "Required command not found: $1"
+}
+
+enter_repository_root() {
+    local repo_root
+    repo_root=$(git rev-parse --show-toplevel 2>/dev/null) ||
+        die "Not a Git repository."
+    cd "$repo_root"
+}
+
+repository_is_dirty() {
+    [[ -n "$(git status --porcelain --untracked-files=normal)" ]]
+}
+
+# =========================
+# Reflog construction
+# =========================
+build_reflog() {
+    local output_file="$1"
+
+    git reflog \
+        --no-color \
+        --date='format-local:%m/%d/%y %I:%M:%S %p' \
+        --pretty=format:'%h%x1f%ad' \
+        -n "$REFLOG_LIMIT" |
+    awk -F '\037' '
+        NF >= 2 {
+            short_hash = $1
+            timestamp = $2
+
+            gsub(/\r/, "", timestamp)
+
+            printf "%s\t%s\n",
+                short_hash,
+                timestamp
+        }
+    ' >"$output_file"
+
+    [[ -s "$output_file" ]] ||
+        die "Reflog is empty — nothing to recover."
+}
+
+select_entry() {
+    local reflog_file="$1"
+    local selection
+    local selected_commit
+
+    if ! selection=$(
+        fzf \
+            --height=80% \
+            --border=sharp \
+            --layout=reverse \
+            --delimiter=$'\t' \
+            --with-nth=1,2 \
+            --nth=1,2 \
+            --info=inline \
+            --prompt="Reflog > " \
+            --pointer="▌" \
+            --header=$'genealogy — Reflog browser · Enter to act · Esc to cancel' \
+            --preview='git --no-pager show --color=always --stat --summary --format=fuller {1} --' \
+            --preview-window='right,55%,wrap' \
+            <"$reflog_file"
+    ); then
+        return 1
+    fi
+
+    selected_commit=${selection%%$'\t'*}
+
+    if [[ -z "$selected_commit" ]]; then
+        warn "fzf returned a selection without a commit hash."
+        return 1
+    fi
+
+    printf "%s" "$selected_commit"
+}
+
+# =========================
+# Commit validation & info
+# =========================
+print_commit_info() {
+    local commit="$1"
+    local short_hash date author subject
+
+    short_hash=$(git rev-parse --short "$commit")
+    date=$(git show -s --date=iso --format='%ad' "$commit")
+    author=$(git show -s --format='%an' "$commit")
+    subject=$(git show -s --format='%s' "$commit")
+
+    printf "\n%bSelected commit%b\n" "$CYAN" "$RESET"
+    printf "  Hash:    %s\n" "$short_hash"
+    printf "  Date:    %s\n" "$date"
+    printf "  Author:  %s\n" "$author"
+    printf "  Subject: %s\n" "$subject"
+}
+
+confirm_action() {
+    local action_description="$1"
+    local decision
+
+    while true; do
+        printf "\n%b%s?%b ([y]/n): " "$YELLOW" "$action_description" "$RESET"
+        IFS= read -r decision
+
+        case "${decision:-y}" in
+            y | Y | yes | YES | Yes) return 0 ;;
+            n | N | no | NO | No)    return 1 ;;
+            *) printf "%bInvalid response.%b Enter y, n, or press Enter for yes.\n" "$RED" "$RESET" >&2 ;;
+        esac
+    done
+}
+
+# =========================
+# Branch naming (only for --branch)
+# =========================
+slugify() {
+    local value="$1"
+    printf "%s" "$value" |
+        tr '[:upper:]' '[:lower:]' |
+        sed -E \
+            -e 's/[^a-z0-9._-]+/-/g' \
+            -e 's/^-+//' \
+            -e 's/-+$//' \
+            -e 's/-+/-/g' |
+        cut -c1-48
+}
+
+suggest_branch_base() {
+    local commit="$1"
+    local subject slug short_hash
+
+    subject=$(git show -s --format='%s' "$commit")
+    slug=$(slugify "$subject")
+    short_hash=$(git rev-parse --short "$commit")
+
+    if [[ -n "$slug" ]]; then
+        printf "%s" "$slug"
+    else
+        printf "recover-%s" "$short_hash"
+    fi
+}
+
+append_branch_suffix() {
+    local branch_base="$1"
+    if [[ "$branch_base" == *"$BRANCH_SUFFIX" ]]; then
+        printf "%s" "$branch_base"
+    else
+        printf "%s%s" "$branch_base" "$BRANCH_SUFFIX"
+    fi
+}
+
+prompt_branch_name() {
+    local commit="$1"
+    local suggested_base branch_base branch_name
+
+    suggested_base=$(suggest_branch_base "$commit")
+
+    while true; do
+        printf "\n%bEnter a name for the new branch%b [%s]: " \
+            "$CYAN" "$RESET" "$suggested_base" >&2
+        IFS= read -r branch_base
+        branch_base=${branch_base:-$suggested_base}
+
+        case "$branch_base" in
+            q | quit | exit) return 1 ;;
+        esac
+
+        branch_name=$(append_branch_suffix "$branch_base")
+
+        if ! git check-ref-format --branch "$branch_name" >/dev/null 2>&1; then
+            printf "%bInvalid branch name:%b %s\n" "$RED" "$RESET" "$branch_name" >&2
+            continue
+        fi
+
+        if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+            printf "%bBranch already exists:%b %s\n" "$YELLOW" "$RESET" "$branch_name" >&2
+            continue
+        fi
+
+        printf "\n%bBranch to create:%b %s\n" "$CYAN" "$RESET" "$branch_name" >&2
+        printf "%s" "$branch_name"
+        return 0
+    done
+}
+
+# =========================
+# Action execution
+# =========================
+create_branch() {
+    local branch_name="$1"
+    local commit="$2"
+
+    printf "\n%bCreating branch:%b %s\n" "$CYAN" "$RESET" "$branch_name"
+    if ! git switch -c "$branch_name" "$commit"; then
+        printf "\n%bBranch creation failed.%b\n" "$RED" "$RESET"
+        return 1
+    fi
+
+    printf "\n%bBranch created successfully.%b\n" "$GREEN" "$RESET"
+    printf "  Branch:  %s\n" "$branch_name"
+    printf "  Commit:  %s\n" "$(git rev-parse --short HEAD)"
+    printf "  Subject: %s\n" "$(git show -s --format='%s' HEAD)"
+}
+
+cherry_pick_commit() {
+    local commit="$1"
+
+    printf "\n%bCherry‑picking commit %s...%b\n" "$CYAN" "$(git rev-parse --short "$commit")" "$RESET"
+    if ! git cherry-pick "$commit"; then
+        printf "\n%bCherry‑pick failed. You may need to resolve conflicts.%b\n" "$RED" "$RESET"
+        printf "After resolving, run: git cherry-pick --continue\n"
+        return 1
+    fi
+
+    printf "\n%bCherry‑pick applied successfully.%b\n" "$GREEN" "$RESET"
+    printf "  New commit: %s\n" "$(git rev-parse --short HEAD)"
+}
+
+# =========================
+# Main
+# =========================
+main() {
+    local selected_commit
+
+    parse_arguments "$@"
+
+    require_command git
+    require_command fzf
+    require_command awk
+    require_command sed
+
+    enter_repository_root
+
+    TEMP_REFLOT_FILE=$(mktemp) || die "Could not create temporary file."
+
+    build_reflog "$TEMP_REFLOT_FILE"
+
+    if ! selected_commit=$(select_entry "$TEMP_REFLOT_FILE"); then
+        printf "%bSelection canceled.%b\n" "$DIM" "$RESET"
+        return 0
+    fi
+
+    # Validate that we have a real commit object
+    git cat-file -e "${selected_commit}^{commit}" 2>/dev/null ||
+        die "The selected reflog entry does not point to a valid commit."
+
+    print_commit_info "$selected_commit"
+
+    # Dirty tree guard
+    if repository_is_dirty; then
+        if [[ "$ALLOW_DIRTY" != true ]]; then
+            printf "\n%bAction blocked:%b the working tree contains uncommitted changes.\n" "$RED" "$RESET"
+            printf "Commit, stash, or discard the changes before continuing.\n"
+            printf "Use %bgenealogy --allow-dirty%b to override.\n" "$CYAN" "$RESET"
+            return 1
+        fi
+        warn "Uncommitted changes exist – they may interfere with the operation."
+    fi
+
+    if [[ "$OPERATION" == "cherry-pick" ]]; then
+        confirm_action "Cherry‑pick this commit onto the current branch" || return 0
+        cherry_pick_commit "$selected_commit"
+    else
+        confirm_action "Create a new branch from this commit" || return 0
+        local branch_name
+        if ! branch_name=$(prompt_branch_name "$selected_commit"); then
+            printf "%bBranch creation canceled.%b\n" "$DIM" "$RESET"
+            return 0
+        fi
+        create_branch "$branch_name" "$selected_commit"
+    fi
+}
+
+main "$@"

@@ -2,8 +2,6 @@
 # install.sh
 # BashScripts-WIN bootstrap, maintenance, upgrade, and diagnostics utility.
 #
-# Baseline reviewed from the uploaded install.sh: :contentReference[oaicite:0]{index=0}
-#
 # Responsibilities:
 #   install.sh:
 #     - Install and upgrade command-line dependencies
@@ -31,6 +29,7 @@ readonly -a PACKAGES=(
 	"Git|git|Git.Git|git|git"
 	"GitHub CLI|gh|GitHub.cli|gh|gh"
 	"Visual Studio Code|code|Microsoft.VisualStudioCode|vscode|vscode"
+	"Windows Terminal|wt|Microsoft.WindowsTerminal|windows-terminal|microsoft-windows-terminal"
 	"fzf|fzf|junegunn.fzf|fzf|fzf"
 	"ripgrep|rg|BurntSushi.ripgrep.MSVC|ripgrep|ripgrep"
 	"fd|fd|sharkdp.fd|fd|fd"
@@ -43,7 +42,6 @@ readonly -a PACKAGES=(
 	"Git LFS|git-lfs|GitHub.GitLFS|git-lfs|git-lfs"
 	"Node.js LTS|node|OpenJS.NodeJS.LTS|nodejs-lts|nodejs-lts"
 	"Python|python|Python.Python.3.12|python|python"
-	"pipx|pipx|pipx.pipx|pipx|pipx"
 )
 
 readonly -a REQUIRED_CORE_COMMANDS=(
@@ -71,6 +69,7 @@ COMMAND_SEQUENCE=0
 WINGET_BIN=""
 SCOOP_BIN=""
 CHOCO_BIN=""
+PYTHON_BIN=""
 
 CURRENT_DISPLAY=""
 CURRENT_COMMAND=""
@@ -88,6 +87,7 @@ PACKAGE_COMPLETED_COUNT=0
 PACKAGE_PENDING_PATH_COUNT=0
 PACKAGE_SKIPPED_COUNT=0
 UPGRADE_CANCELLED=0
+BOOTSTRAP_RESTART_REQUIRED=0
 
 declare -a PATH_PENDING_PACKAGES=()
 declare -a SKIPPED_PACKAGES=()
@@ -658,26 +658,72 @@ prepend_path_directory() {
 }
 
 augment_package_paths() {
+	local app_data
+	local app_data_unix
+	local candidate
+	local chocolatey_root
 	local converted
 	local local_app_data
+	local local_app_data_unix
+	local program_files
+	local program_files_unix
 	local scoop_root
-	local chocolatey_root
 
+	app_data="${APPDATA:-}"
+	app_data_unix=""
+	chocolatey_root="${ChocolateyInstall:-/c/ProgramData/chocolatey}"
 	converted=""
 	local_app_data="${LOCALAPPDATA:-}"
+	local_app_data_unix=""
+	program_files="${ProgramFiles:-${PROGRAMFILES:-${ProgramW6432:-}}}"
+	program_files_unix=""
 	scoop_root="${SCOOP:-$HOME/scoop}"
-	chocolatey_root="${ChocolateyInstall:-/c/ProgramData/chocolatey}"
+
+	if converted="$(to_unix_path "$scoop_root")"; then
+		scoop_root="$converted"
+	fi
+
+	if converted="$(to_unix_path "$chocolatey_root")"; then
+		chocolatey_root="$converted"
+	fi
 
 	prepend_path_directory "$scoop_root/shims"
 	prepend_path_directory "$chocolatey_root/bin"
-	prepend_path_directory "/c/ProgramData/chocolatey/bin"
+	prepend_path_directory "$HOME/.local/bin"
+
+	if [[ -n "${PIPX_BIN_DIR:-}" ]] &&
+		converted="$(to_unix_path "$PIPX_BIN_DIR")"; then
+		prepend_path_directory "$converted"
+	fi
+
+	if [[ -n "$program_files" ]] &&
+		! has_control_characters "$program_files" &&
+		program_files_unix="$(to_unix_path "$program_files")"; then
+		prepend_path_directory "$program_files_unix/GitHub CLI"
+		prepend_path_directory "$program_files_unix/Git/cmd"
+		prepend_path_directory "$program_files_unix/Git/bin"
+	fi
 
 	if [[ -n "$local_app_data" ]] &&
-		! has_control_characters "$local_app_data"; then
-		if converted="$(to_unix_path "$local_app_data")" &&
-			[[ -n "$converted" ]]; then
-			prepend_path_directory "$converted/Microsoft/WinGet/Links"
-		fi
+		! has_control_characters "$local_app_data" &&
+		local_app_data_unix="$(to_unix_path "$local_app_data")"; then
+		prepend_path_directory "$local_app_data_unix/Microsoft/WinGet/Links"
+		prepend_path_directory "$local_app_data_unix/Microsoft/WindowsApps"
+		prepend_path_directory "$local_app_data_unix/Programs/Microsoft VS Code/bin"
+
+		for candidate in \
+			"$local_app_data_unix"/Programs/Python/Python* \
+			"$local_app_data_unix"/Programs/Python/Python*/Scripts; do
+			prepend_path_directory "$candidate"
+		done
+	fi
+
+	if [[ -n "$app_data" ]] &&
+		! has_control_characters "$app_data" &&
+		app_data_unix="$(to_unix_path "$app_data")"; then
+		for candidate in "$app_data_unix"/Python/Python*/Scripts; do
+			prepend_path_directory "$candidate"
+		done
 	fi
 
 	if ! hash -r 2>/dev/null; then
@@ -700,6 +746,57 @@ resolve_package_managers() {
 
 	if ! CHOCO_BIN="$(resolve_first_command choco choco.exe)"; then
 		CHOCO_BIN=""
+	fi
+}
+
+resolve_python() {
+	PYTHON_BIN=""
+
+	if ! PYTHON_BIN="$(
+		resolve_first_command python python.exe py py.exe python3
+	)"; then
+		PYTHON_BIN=""
+		return 1
+	fi
+}
+
+augment_python_user_paths() {
+	local converted
+	local scripts_path
+
+	converted=""
+	scripts_path=""
+
+	if ! resolve_python; then
+		return 0
+	fi
+
+	if scripts_path="$(
+		"$PYTHON_BIN" -c '
+import sys
+import sysconfig
+
+scheme = "nt_user" if sys.platform == "win32" else sysconfig.get_preferred_scheme("user")
+print(sysconfig.get_path("scripts", scheme=scheme))
+' 2>/dev/null
+	)"; then
+		scripts_path="${scripts_path//$'\r'/}"
+
+		if [[ -n "$scripts_path" ]] &&
+			converted="$(to_unix_path "$scripts_path")"; then
+			prepend_path_directory "$converted"
+		fi
+	fi
+
+	prepend_path_directory "$HOME/.local/bin"
+
+	if [[ -n "${PIPX_BIN_DIR:-}" ]] &&
+		converted="$(to_unix_path "$PIPX_BIN_DIR")"; then
+		prepend_path_directory "$converted"
+	fi
+
+	if ! hash -r 2>/dev/null; then
+		verbose "The shell command cache could not be refreshed."
 	fi
 }
 
@@ -1121,26 +1218,39 @@ attempt_package_operation() {
 	return 1
 }
 
-record_pending_path_package() {
-	PATH_PENDING_PACKAGES+=("$CURRENT_DISPLAY")
+record_named_pending_path_package() {
+	local display_name
+
+	display_name="$1"
+	PATH_PENDING_PACKAGES+=("$display_name")
 	PACKAGE_PENDING_PATH_COUNT=$((PACKAGE_PENDING_PATH_COUNT + 1))
 }
 
-record_skipped_package() {
-	local summary
+record_pending_path_package() {
+	record_named_pending_path_package "$CURRENT_DISPLAY"
+}
+
+record_named_skipped_package() {
+	local display_name
 	local reason
+	local summary
 
-	summary=""
-
+	display_name="$1"
 	shift
+	summary=""
 
 	for reason in "$@"; do
 		summary+="${summary:+; }$reason"
 	done
 
-	SKIPPED_PACKAGES+=("$CURRENT_DISPLAY")
+	SKIPPED_PACKAGES+=("$display_name")
 	SKIPPED_REASONS+=("$summary")
 	PACKAGE_SKIPPED_COUNT=$((PACKAGE_SKIPPED_COUNT + 1))
+}
+
+record_skipped_package() {
+	shift
+	record_named_skipped_package "$CURRENT_DISPLAY" "$@"
 }
 
 prompt_package_skip() {
@@ -1268,6 +1378,131 @@ reset_package_outcomes() {
 	SKIPPED_REASONS=()
 }
 
+# ---------- Python-managed dependencies ----------
+python_pipx_module_available() {
+	if [[ -z "$PYTHON_BIN" ]] && ! resolve_python; then
+		return 1
+	fi
+
+	"$PYTHON_BIN" -m pipx --version >/dev/null 2>&1
+}
+
+record_pipx_failure() {
+	local reason
+
+	reason="$1"
+	err "$reason"
+	record_named_skipped_package "pipx" "$reason"
+}
+
+ensure_pipx() {
+	local action
+	local diagnostic
+	local install_required
+
+	action="$1"
+	diagnostic=""
+	install_required=0
+
+	case "$action" in
+	install | upgrade) ;;
+	*)
+		err "Unsupported pipx action: $action"
+		return 1
+		;;
+	esac
+
+	section "pipx"
+	augment_package_paths
+	augment_python_user_paths
+
+	if ! resolve_python; then
+		if package_waiting_for_path_refresh "Python"; then
+			warn "Python was installed but is not visible in this Git Bash session."
+			warn "pipx installation is deferred until the next run."
+			record_named_pending_path_package "pipx"
+			return 0
+		fi
+
+		record_pipx_failure "Python is unavailable; pipx cannot be installed."
+		return 0
+	fi
+
+	if [[ "$action" == "install" ]] && has_cmd pipx; then
+		ok "pipx is already available."
+		PACKAGE_ALREADY_PRESENT_COUNT=$((PACKAGE_ALREADY_PRESENT_COUNT + 1))
+		return 0
+	fi
+
+	if python_pipx_module_available; then
+		if [[ "$action" == "upgrade" ]]; then
+			install_required=1
+		fi
+	else
+		if has_cmd pipx; then
+			ok "pipx is available through an external package manager; leaving it unchanged."
+			PACKAGE_ALREADY_PRESENT_COUNT=$((PACKAGE_ALREADY_PRESENT_COUNT + 1))
+			return 0
+		fi
+
+		install_required=1
+	fi
+
+	if ((install_required != 0)); then
+		if ! "$PYTHON_BIN" -m pip --version >/dev/null 2>&1; then
+			info "Python pip is unavailable; attempting to initialize it with ensurepip."
+
+			if ! run_logged_capture "$PYTHON_BIN" -m ensurepip --upgrade; then
+				if ! diagnostic="$(last_nonempty_line "$CAPTURED_OUTPUT")"; then
+					diagnostic="No diagnostic output was returned."
+				fi
+
+				record_pipx_failure "Unable to initialize pip. Diagnostic: $diagnostic"
+				return 0
+			fi
+		fi
+
+		info "Installing pipx through the active Python interpreter."
+
+		if ! run_logged_capture \
+			"$PYTHON_BIN" -m pip install --user --upgrade pipx; then
+			if ! diagnostic="$(last_nonempty_line "$CAPTURED_OUTPUT")"; then
+				diagnostic="No diagnostic output was returned."
+			fi
+
+			record_pipx_failure "Python could not install pipx. Diagnostic: $diagnostic"
+			return 0
+		fi
+	fi
+
+	if ! run_logged_capture "$PYTHON_BIN" -m pipx ensurepath; then
+		warn "pipx is installed, but its persistent PATH update could not be confirmed."
+		record_named_pending_path_package "pipx"
+	else
+		augment_python_user_paths
+	fi
+
+	PACKAGE_COMPLETED_COUNT=$((PACKAGE_COMPLETED_COUNT + 1))
+
+	if has_cmd pipx; then
+		ok "pipx is available in this Git Bash session."
+		return 0
+	fi
+
+	if python_pipx_module_available; then
+		warn "pipx is installed, but the 'pipx' command is not visible in this shell yet."
+		warn "A new Git Bash session may be required."
+
+		if ! package_waiting_for_path_refresh "pipx"; then
+			record_named_pending_path_package "pipx"
+		fi
+
+		return 0
+	fi
+
+	record_pipx_failure "pipx installation completed without producing a usable module or command."
+}
+
 # ---------- Winget availability ----------
 prompt_missing_winget() {
 	section "Winget is not installed"
@@ -1371,8 +1606,8 @@ cmd_version() {
 	fi
 
 	case "$command_name" in
-	tree)
-		printf '%s' "tree command available"
+	tree | wt)
+		printf '%s command available' "$command_name"
 		return 0
 		;;
 	shellcheck)
@@ -1407,6 +1642,61 @@ cmd_version() {
 		printf '%s' "$version"
 		;;
 	esac
+}
+
+print_pipx_status() {
+	local path
+	local version
+
+	path=""
+	version=""
+
+	augment_python_user_paths
+
+	if has_cmd pipx; then
+		if ! path="$(cmd_path pipx)"; then
+			path="path unavailable"
+		fi
+
+		if ! version="$(cmd_version pipx)"; then
+			version="version unavailable"
+		fi
+
+		printf '%-16s %b%-10s%b %s | %s\n' \
+			"pipx" \
+			"$GREEN" \
+			"AVAILABLE" \
+			"$RESET" \
+			"$path" \
+			"$version"
+		return 0
+	fi
+
+	if resolve_python && python_pipx_module_available; then
+		if ! version="$("$PYTHON_BIN" -m pipx --version 2>/dev/null)"; then
+			version="version unavailable"
+		fi
+
+		if ! version="$(sanitize_inline "$version")"; then
+			version="version unavailable"
+		fi
+
+		printf '%-16s %b%-10s%b %s | %s\n' \
+			"pipx" \
+			"$YELLOW" \
+			"MODULE" \
+			"$RESET" \
+			"$PYTHON_BIN -m pipx" \
+			"$version"
+		return 0
+	fi
+
+	printf '%-16s %b%-10s%b %s\n' \
+		"pipx" \
+		"$YELLOW" \
+		"MISSING" \
+		"$RESET" \
+		"Installed through Python pip during maintenance or bootstrap"
 }
 
 print_dependency_status() {
@@ -1463,6 +1753,10 @@ print_dependency_status() {
 		fi
 	done
 
+	if ! print_pipx_status; then
+		return 1
+	fi
+
 	if [[ -n "$WINGET_BIN" ]]; then
 		version=""
 
@@ -1508,6 +1802,10 @@ run_install_missing() {
 			return 1
 		fi
 	done
+
+	if ! ensure_pipx "install"; then
+		return 1
+	fi
 }
 
 run_upgrade_known() {
@@ -1534,6 +1832,10 @@ run_upgrade_known() {
 			return 1
 		fi
 	done
+
+	if ! ensure_pipx "upgrade"; then
+		return 1
+	fi
 }
 
 print_package_outcome_summary() {
@@ -1542,7 +1844,7 @@ print_package_outcome_summary() {
 	section "Package operation summary"
 
 	printf '  Already available:   %d\n' "$PACKAGE_ALREADY_PRESENT_COUNT"
-	printf '  Manager completed:   %d\n' "$PACKAGE_COMPLETED_COUNT"
+	printf '  Operations completed:%4d\n' "$PACKAGE_COMPLETED_COUNT"
 	printf '  PATH refresh needed: %d\n' "$PACKAGE_PENDING_PATH_COUNT"
 	printf '  Skipped:             %d\n' "$PACKAGE_SKIPPED_COUNT"
 
@@ -1589,7 +1891,8 @@ chmod_scripts() {
 	while IFS= read -r -d '' file; do
 		first_line=""
 
-		if ! IFS= read -r first_line <"$file"; then
+		if ! IFS= read -r first_line <"$file" &&
+			[[ -z "$first_line" ]]; then
 			continue
 		fi
 
@@ -1610,25 +1913,119 @@ chmod_scripts() {
 
 	ok "Script permissions updated."
 }
+
 # ---------- GitHub authentication ----------
-require_bootstrap_commands() {
-	local command_name
-	local missing_count
+package_waiting_for_path_refresh() {
+	local expected_package
+	local pending_package
 
-	missing_count=0
+	expected_package="$1"
 
-	for command_name in git gh; do
-		if ! has_cmd "$command_name"; then
-			err "Bootstrap requires '$command_name', but it remains unavailable."
-			missing_count=$((missing_count + 1))
+	for pending_package in "${PATH_PENDING_PACKAGES[@]}"; do
+		if [[ "$pending_package" == "$expected_package" ]]; then
+			return 0
 		fi
 	done
 
-	if ((missing_count > 0)); then
-		err "Bootstrap cannot continue without Git and GitHub CLI."
-		warn "A newly installed command may require a new Git Bash session before it appears on PATH."
-		return 1
+	return 1
+}
+
+print_bootstrap_resume_notice() {
+	local repository_command
+	local resume_command
+
+	if has_cmd make && [[ -f "$REPO_DIR/Makefile" ]]; then
+		resume_command="make new"
+	else
+		resume_command="bash install.sh --bootstrap"
 	fi
+
+	printf -v repository_command 'cd %q' "$REPO_DIR"
+
+	section "Bootstrap phase 1 completed"
+
+	if ! has_cmd gh &&
+		package_waiting_for_path_refresh "GitHub CLI"; then
+		printf '%bGitHub CLI was installed, but this Git Bash session cannot see it yet.%b\n' \
+			"$YELLOW" \
+			"$RESET"
+	fi
+
+	if ! has_cmd git &&
+		package_waiting_for_path_refresh "Git"; then
+		printf '%bGit was installed, but this Git Bash session cannot see it yet.%b\n' \
+			"$YELLOW" \
+			"$RESET"
+	fi
+
+	printf '\n'
+	printf '%s\n' \
+		"1. Close this Git Bash window." \
+		"2. Open Git Bash again." \
+		"3. Return to the BashScripts repository:" \
+		"   $repository_command" \
+		"4. Run:" \
+		"   $resume_command" \
+		"" \
+		"Already completed steps will be detected and skipped."
+
+	if [[ "$resume_command" != "make new" ]]; then
+		printf '\n%bNote:%b GNU Make is not currently available, so the direct bootstrap command is shown.\n' \
+			"$DIM" \
+			"$RESET"
+	fi
+
+	printf '\n%bLog saved to:%b %s\n' \
+		"$BOLD" \
+		"$RESET" \
+		"$LOG_FILE"
+}
+
+require_bootstrap_commands() {
+	local command_name
+	local display_name
+	local missing_count
+	local pending_count
+
+	missing_count=0
+	pending_count=0
+	BOOTSTRAP_RESTART_REQUIRED=0
+
+	for command_name in git gh; do
+		if has_cmd "$command_name"; then
+			continue
+		fi
+
+		case "$command_name" in
+		git)
+			display_name="Git"
+			;;
+		gh)
+			display_name="GitHub CLI"
+			;;
+		esac
+
+		missing_count=$((missing_count + 1))
+
+		if package_waiting_for_path_refresh "$display_name"; then
+			pending_count=$((pending_count + 1))
+			warn "$display_name was installed but is not visible in this Git Bash session."
+		else
+			err "Bootstrap requires '$command_name', but it remains unavailable."
+		fi
+	done
+
+	if ((missing_count == 0)); then
+		return 0
+	fi
+
+	if ((pending_count == missing_count)); then
+		BOOTSTRAP_RESTART_REQUIRED=1
+		return 2
+	fi
+
+	err "Bootstrap cannot continue because one or more required commands are unavailable."
+	return 1
 }
 
 configure_github_git_credentials() {
@@ -1963,7 +2360,12 @@ print_managed_dotfiles_status() {
 
 # ---------- Diagnostics ----------
 print_restart_note() {
-	printf '\n%bNext step:%b restart Git Bash or run:\n' "$BOLD" "$RESET"
+	printf '\n%bNext step:%b open a new Git Bash session to refresh Windows-installed command paths.\n' \
+		"$BOLD" \
+		"$RESET"
+
+	printf '%s\n' \
+		"To load the restored Bash configuration in this session only, run:"
 	printf '  source %q\n' "$HOME/.bashrc"
 }
 
@@ -1989,6 +2391,10 @@ run_status() {
 
 # ---------- Modes ----------
 mode_bootstrap() {
+	local bootstrap_command_status
+
+	bootstrap_command_status=0
+
 	section "Bootstrap"
 
 	printf '%b%s%b\n' \
@@ -2004,8 +2410,21 @@ mode_bootstrap() {
 		return 1
 	fi
 
-	if ! require_bootstrap_commands; then
+	if require_bootstrap_commands; then
+		:
+	else
+		bootstrap_command_status=$?
+
 		print_package_outcome_summary
+
+		if ((bootstrap_command_status == 2)) &&
+			((BOOTSTRAP_RESTART_REQUIRED != 0)) &&
+			((PACKAGE_SKIPPED_COUNT == 0)); then
+			print_bootstrap_resume_notice
+		else
+			err "Bootstrap phase 1 could not be completed. Review: $LOG_FILE"
+		fi
+
 		return 1
 	fi
 
