@@ -175,49 +175,91 @@ get_repository_state() {
 
 preview_commit() {
 	local commit
-	local parents
+	local pr_record
 	local pr_url
+	local pr_number
+	local pr_state
 
 	commit=$1
-	parents=""
+	pr_record=""
 	pr_url=""
+	pr_number=""
+	pr_state=""
 
 	if [[ ! "$commit" =~ ^[0-9a-fA-F]{7,64}$ ]]; then
 		printf "Invalid commit identifier.\n" >&2
 		return 1
 	fi
 
-	if ! parents=$(git show -s --format='%P' "$commit" 2>/dev/null); then
+	if ! git cat-file -e "${commit}^{commit}" 2>/dev/null; then
 		printf "Unable to read commit.\n" >&2
 		return 1
 	fi
 
-	if [[ "$parents" == *" "* ]] && command -v gh >/dev/null 2>&1; then
-		if ! pr_url=$(
+	if command -v gh >/dev/null 2>&1; then
+		if ! pr_record=$(
 			gh api \
 				-H "Accept: application/vnd.github+json" \
 				"repos/{owner}/{repo}/commits/${commit}/pulls" \
 				--jq '
-					[
-						.[] |
+					map(
 						select(
-							.merged_at != null and
-							.html_url != null
+							.html_url != null and
+							.number != null
 						)
-					][0].html_url // empty
+					)
+					| sort_by([
+						if .merged_at != null then 0
+						elif .state == "open" then 1
+						else 2
+						end,
+						-(.number)
+					])
+					| .[0]
+					| if . == null then
+						empty
+					else
+						[
+							.html_url,
+							(.number | tostring),
+							if .merged_at != null then
+								"merged"
+							elif .state == "open" then
+								"open"
+							else
+								"closed"
+							end
+						]
+						| @tsv
+					end
 				' \
 				2>/dev/null
 		); then
-			pr_url=""
+			pr_record=""
 		fi
 	fi
 
-	pr_url=${pr_url//$'\r'/}
-	pr_url=${pr_url//$'\n'/}
+	pr_record=${pr_record//$'\r'/}
 
-	if [[ ! "$pr_url" =~ ^https://[^[:space:]]+$ ]]; then
-		pr_url=""
+	if [[ -n "$pr_record" ]]; then
+		IFS=$'\t' read -r pr_url pr_number pr_state <<<"$pr_record"
 	fi
+
+	if [[ ! "$pr_url" =~ ^https://[^[:space:]]+$ ||
+		! "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+		pr_url=""
+		pr_number=""
+		pr_state=""
+	fi
+
+	case "$pr_state" in
+	merged | open | closed) ;;
+	*)
+		pr_url=""
+		pr_number=""
+		pr_state=""
+		;;
+	esac
 
 	if [[ -z "$pr_url" ]]; then
 		git --no-pager show \
@@ -235,21 +277,22 @@ preview_commit() {
 		--summary \
 		--format=fuller \
 		"$commit" |
-		awk -v pr_url="$pr_url" '
+		awk \
+			-v pr_url="$pr_url" \
+			-v pr_number="$pr_number" \
+			-v pr_state="$pr_state" '
 			{
 				print
 
 				line = $0
 				gsub(/\033\[[0-9;]*m/, "", line)
 
-				if (!inserted && line ~ /^Merge:[[:space:]]/) {
-					pr_number = pr_url
-					sub(/^.*\/pull\//, "", pr_number)
-
-					printf "\033[1;36mPull request:\033[0m "
+				if (!inserted && line ~ /^commit[[:space:]]/) {
+					printf "\033[1;36mAssociated pull request:\033[0m "
 					printf "\033]8;;%s\033\\", pr_url
 					printf "\033[4;36mOpen pull request #%s\033[0m", pr_number
-					printf "\033]8;;\033\\\n"
+					printf "\033]8;;\033\\"
+					printf " \033[2m(%s)\033[0m\n", pr_state
 
 					inserted = 1
 				}
