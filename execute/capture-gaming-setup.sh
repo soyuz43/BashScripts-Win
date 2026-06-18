@@ -191,29 +191,29 @@ choose_mode() {
 		choice="${choice,,}"
 
 		case "$choice" in
-			1 | status)
-				MODE="status"
-				return
-				;;
-			2 | capture)
-				MODE="capture"
-				return
-				;;
-			3 | dry-run | dryrun)
-				MODE="dry-run"
-				return
-				;;
-			4 | archive)
-				MODE="archive"
-				return
-				;;
-			q | quit | exit)
-				MODE="quit"
-				return
-				;;
-			*)
-				warn "Invalid selection: ${choice:-empty}"
-				;;
+		1 | status)
+			MODE="status"
+			return
+			;;
+		2 | capture)
+			MODE="capture"
+			return
+			;;
+		3 | dry-run | dryrun)
+			MODE="dry-run"
+			return
+			;;
+		4 | archive)
+			MODE="archive"
+			return
+			;;
+		q | quit | exit)
+			MODE="quit"
+			return
+			;;
+		*)
+			warn "Invalid selection: ${choice:-empty}"
+			;;
 		esac
 	done
 }
@@ -226,28 +226,28 @@ parse_args() {
 	fi
 
 	case "${1:-}" in
-		"")
-			MODE="menu"
-			;;
-		--status | --check)
-			MODE="status"
-			;;
-		--capture)
-			MODE="capture"
-			;;
-		--dry-run)
-			MODE="dry-run"
-			;;
-		--archive)
-			MODE="archive"
-			;;
-		--help | -h)
-			MODE="help"
-			;;
-		*)
-			err "Unknown option: $1"
-			return 2
-			;;
+	"")
+		MODE="menu"
+		;;
+	--status | --check)
+		MODE="status"
+		;;
+	--capture)
+		MODE="capture"
+		;;
+	--dry-run)
+		MODE="dry-run"
+		;;
+	--archive)
+		MODE="archive"
+		;;
+	--help | -h)
+		MODE="help"
+		;;
+	*)
+		err "Unknown option: $1"
+		return 2
+		;;
 	esac
 }
 
@@ -287,12 +287,12 @@ normalize_path() {
 	path=$1
 
 	case "$path" in
-		"~")
-			path=$HOME
-			;;
-		"$HOME"*)
-			path="$HOME/${path#~/}"
-			;;
+	"~")
+		path=$HOME
+		;;
+	"$HOME"*)
+		path="$HOME/${path#~/}"
+		;;
 	esac
 
 	if [[ "$path" != /* ]]; then
@@ -305,16 +305,15 @@ normalize_path() {
 
 	for component in "${components[@]}"; do
 		case "$component" in
-			"" | ".")
-				;;
-			"..")
-				if ((${#resolved[@]} > 0)); then
-					unset 'resolved[${#resolved[@]}-1]'
-				fi
-				;;
-			*)
-				resolved+=("$component")
-				;;
+		"" | ".") ;;
+		"..")
+			if ((${#resolved[@]} > 0)); then
+				unset 'resolved[${#resolved[@]}-1]'
+			fi
+			;;
+		*)
+			resolved+=("$component")
+			;;
 		esac
 	done
 
@@ -438,10 +437,10 @@ validate_repository() {
 	git_root=""
 
 	case "$GAMING_SETUP_REPO" in
-		"/" | "/c" | "/d" | "/e" | "$HOME")
-			err "Refusing suspiciously broad repository path: $GAMING_SETUP_REPO"
-			return 1
-			;;
+	"/" | "/c" | "/d" | "/e" | "$HOME")
+		err "Refusing suspiciously broad repository path: $GAMING_SETUP_REPO"
+		return 1
+		;;
 	esac
 
 	if [[ ! -d "$GAMING_SETUP_REPO" ]]; then
@@ -450,9 +449,8 @@ validate_repository() {
 	fi
 
 	if [[ ! -d "$GAMING_SETUP_REPO/manifests" ||
-	      ! -d "$GAMING_SETUP_REPO/emulators/xemu" ||
-	      ! -f "$GAMING_SETUP_REPO/README.md" ]]
-	then
+		! -d "$GAMING_SETUP_REPO/emulators/xemu" ||
+		! -f "$GAMING_SETUP_REPO/README.md" ]]; then
 		err "Gaming metadata repository markers are missing."
 		return 1
 	fi
@@ -599,18 +597,18 @@ media_format() {
 	filename=${1,,}
 
 	case "$filename" in
-		*.xiso.iso)
-			printf 'xiso.iso'
-			;;
-		*.xiso)
-			printf 'xiso'
-			;;
-		*.iso)
-			printf 'iso'
-			;;
-		*)
-			return 1
-			;;
+	*.xiso.iso)
+		printf 'xiso.iso'
+		;;
+	*.xiso)
+		printf 'xiso'
+		;;
+	*.iso)
+		printf 'iso'
+		;;
+	*)
+		return 1
+		;;
 	esac
 }
 
@@ -624,18 +622,18 @@ display_title() {
 	length=${#filename}
 
 	case "$lowercase" in
-		*.xiso.iso)
-			printf '%s' "${filename:0:length-9}"
-			;;
-		*.xiso)
-			printf '%s' "${filename:0:length-5}"
-			;;
-		*.iso)
-			printf '%s' "${filename:0:length-4}"
-			;;
-		*)
-			printf '%s' "$filename"
-			;;
+	*.xiso.iso)
+		printf '%s' "${filename:0:length-9}"
+		;;
+	*.xiso)
+		printf '%s' "${filename:0:length-5}"
+		;;
+	*.iso)
+		printf '%s' "${filename:0:length-4}"
+		;;
+	*)
+		printf '%s' "$filename"
+		;;
 	esac
 }
 
@@ -703,8 +701,7 @@ migrate_legacy_games() {
 		reshade_preset \
 		status \
 		notes \
-		extra
-	do
+		extra; do
 		if [[ -z "$title$platform$emulator$filename$media_sha1$config_id$reshade_preset$status$notes$extra" ]]; then
 			continue
 		fi
@@ -778,27 +775,27 @@ prepare_games_manifest() {
 	fi
 
 	case "$current_header" in
-		"$GAME_HEADER")
-			if ! cp -- "$normalized_file" "$OLD_GAMES_FILE"; then
-				err "Unable to prepare games.tsv."
-				return 1
-			fi
-			;;
-		"$LEGACY_GAME_HEADER")
-			if ! migrate_legacy_games "$normalized_file" "$OLD_GAMES_FILE"; then
-				return 1
-			fi
-			;;
-		*)
-			if manifest_has_rows "$normalized_file"; then
-				err "Unsupported games.tsv schema with existing data."
-				printf 'Found:\n%s\n' "$current_header" >&2
-				return 1
-			fi
+	"$GAME_HEADER")
+		if ! cp -- "$normalized_file" "$OLD_GAMES_FILE"; then
+			err "Unable to prepare games.tsv."
+			return 1
+		fi
+		;;
+	"$LEGACY_GAME_HEADER")
+		if ! migrate_legacy_games "$normalized_file" "$OLD_GAMES_FILE"; then
+			return 1
+		fi
+		;;
+	*)
+		if manifest_has_rows "$normalized_file"; then
+			err "Unsupported games.tsv schema with existing data."
+			printf 'Found:\n%s\n' "$current_header" >&2
+			return 1
+		fi
 
-			warn "Empty games.tsv uses an older schema; a new header will be proposed."
-			printf '%s\n' "$GAME_HEADER" >"$OLD_GAMES_FILE"
-			;;
+		warn "Empty games.tsv uses an older schema; a new header will be proposed."
+		printf '%s\n' "$GAME_HEADER" >"$OLD_GAMES_FILE"
+		;;
 	esac
 }
 
@@ -857,8 +854,7 @@ migrate_legacy_emulators() {
 
 				print id, platform, name, status, config, notes
 			}
-		' "$input_file" >"$output_file"
-	then
+		' "$input_file" >"$output_file"; then
 		err "Unable to normalize the existing emulators.tsv schema."
 		return 1
 	fi
@@ -922,8 +918,7 @@ validate_manifest() {
 			NF != expected || $1 == "" || seen[$1]++ {
 				exit 1
 			}
-		' "$manifest_file"
-	then
+		' "$manifest_file"; then
 		err "Manifest contains malformed or duplicate rows: $manifest_file"
 		return 1
 	fi
@@ -963,8 +958,7 @@ discover_games() {
 	if ! find -P "$XEMU_GAMES_DIR" \
 		-type f \
 		\( -iname '*.iso' -o -iname '*.xiso' \) \
-		-print0 >"$unsorted_file"
-	then
+		-print0 >"$unsorted_file"; then
 		err "Unable to inspect the xemu games directory."
 		return 1
 	fi
@@ -1076,8 +1070,7 @@ merge_games() {
 						print old_row[id]
 				}
 			}
-		' "$OLD_GAMES_FILE" "$DISCOVERED_GAMES_FILE" >"$body_file"
-	then
+		' "$OLD_GAMES_FILE" "$DISCOVERED_GAMES_FILE" >"$body_file"; then
 		err "Unable to merge games.tsv."
 		return 1
 	fi
@@ -1145,8 +1138,7 @@ merge_emulators() {
 						print old_row[id]
 				}
 			}
-		' "$OLD_EMULATORS_FILE" "$DISCOVERED_EMULATORS_FILE" >"$body_file"
-	then
+		' "$OLD_EMULATORS_FILE" "$DISCOVERED_EMULATORS_FILE" >"$body_file"; then
 		err "Unable to merge emulators.tsv."
 		return 1
 	fi
@@ -1185,9 +1177,9 @@ approved_config_extension() {
 	file_path=${1,,}
 
 	case "$file_path" in
-		*.toml | *.ini | *.cfg | *.conf | *.json | *.yaml | *.yml)
-			return
-			;;
+	*.toml | *.ini | *.cfg | *.conf | *.json | *.yaml | *.yml)
+		return
+		;;
 	esac
 
 	return 1
@@ -1286,16 +1278,15 @@ discover_configs() {
 	if ! find -P "$XEMU_CONFIG_DIR" \
 		-type f \
 		\( \
-			-iname '*.toml' -o \
-			-iname '*.ini' -o \
-			-iname '*.cfg' -o \
-			-iname '*.conf' -o \
-			-iname '*.json' -o \
-			-iname '*.yaml' -o \
-			-iname '*.yml' \
+		-iname '*.toml' -o \
+		-iname '*.ini' -o \
+		-iname '*.cfg' -o \
+		-iname '*.conf' -o \
+		-iname '*.json' -o \
+		-iname '*.yaml' -o \
+		-iname '*.yml' \
 		\) \
-		-print0 >"$unsorted_file"
-	then
+		-print0 >"$unsorted_file"; then
 		err "Unable to inspect the xemu config directory."
 		return 1
 	fi
@@ -1338,8 +1329,7 @@ prepare_capture_plan() {
 		! build_emulator_record ||
 		! merge_emulators ||
 		! build_locations_manifest ||
-		! discover_configs
-	then
+		! discover_configs; then
 		return 1
 	fi
 
@@ -1410,8 +1400,7 @@ atomic_copy() {
 	fi
 
 	if [[ -f "$destination" ]] &&
-		cmp -s -- "$temporary_file" "$destination"
-	then
+		cmp -s -- "$temporary_file" "$destination"; then
 		rm -f -- "$temporary_file"
 		return
 	fi
@@ -1442,8 +1431,7 @@ apply_capture_plan() {
 
 		if ! atomic_copy \
 			"${PLAN_SOURCES[$index]}" \
-			"${PLAN_DESTINATIONS[$index]}"
-		then
+			"${PLAN_DESTINATIONS[$index]}"; then
 			return 1
 		fi
 
@@ -1468,15 +1456,15 @@ print_dry_run_plan() {
 		action=${PLAN_ACTIONS[$index]}
 
 		case "$action" in
-			create)
-				dry_run_message "Create ${PLAN_DESTINATIONS[$index]}"
-				;;
-			update)
-				dry_run_message "Update ${PLAN_DESTINATIONS[$index]}"
-				;;
-			unchanged)
-				dry_run_message "Leave unchanged ${PLAN_DESTINATIONS[$index]}"
-				;;
+		create)
+			dry_run_message "Create ${PLAN_DESTINATIONS[$index]}"
+			;;
+		update)
+			dry_run_message "Update ${PLAN_DESTINATIONS[$index]}"
+			;;
+		unchanged)
+			dry_run_message "Leave unchanged ${PLAN_DESTINATIONS[$index]}"
+			;;
 		esac
 	done
 
@@ -1503,8 +1491,7 @@ print_git_status() {
 	fi
 
 	if ! git -C "$GAMING_SETUP_REPO" \
-		check-ignore -q manifests/locations.local.tsv
-	then
+		check-ignore -q manifests/locations.local.tsv; then
 		warn "manifests/locations.local.tsv is not currently ignored by Git."
 	fi
 }
@@ -1554,23 +1541,23 @@ archive_path_allowed() {
 	lowercase=${relative_path,,}
 
 	case "/$lowercase/" in
-		*/.git/* | */bios/* | */mcpx/* | */firmware/* | */hdd/* | \
+	*/.git/* | */bios/* | */mcpx/* | */firmware/* | */hdd/* | \
 		*/cache/* | */caches/* | */save/* | */saves/* | \
 		*/screenshot/* | */screenshots/* | */archives/*)
-			return 1
-			;;
+		return 1
+		;;
 	esac
 
 	case "$lowercase" in
-		*.exe | *.dll | *.iso | *.xiso | *.xbe | *.xex | *.chd | \
+	*.exe | *.dll | *.iso | *.xiso | *.xbe | *.xex | *.chd | \
 		*.rom | *.img | *.bin | *.vhd | *.vhdx | *.log | *.zip | \
 		*.7z | *.rar | *.tar | *.gz | *.bz2 | *.xz)
-			return 1
-			;;
+		return 1
+		;;
 	esac
 
 	case "$relative_path" in
-		README.md | \
+	README.md | \
 		docs/* | \
 		manifests/* | \
 		templates/* | \
@@ -1579,18 +1566,17 @@ archive_path_allowed() {
 		emulators/xemu/configs/* | \
 		emulators/xemu/titles/* | \
 		reshade/README.md | \
-		reshade/presets/*)
-			;;
-		*)
-			return 1
-			;;
+		reshade/presets/*) ;;
+	*)
+		return 1
+		;;
 	esac
 
 	case "$lowercase" in
-		*.md | *.txt | *.tsv | *.json | *.toml | *.ini | *.cfg | \
+	*.md | *.txt | *.tsv | *.json | *.toml | *.ini | *.cfg | \
 		*.conf | *.yaml | *.yml | *.fx | *.fxh)
-			return
-			;;
+		return
+		;;
 	esac
 
 	return 1
@@ -1660,8 +1646,7 @@ build_archive_staging_tree() {
 		if ! stage_archive_file \
 			"$GAMING_SETUP_REPO/README.md" \
 			"README.md" \
-			"$staging_root"
-		then
+			"$staging_root"; then
 			return 1
 		fi
 	fi
@@ -1701,8 +1686,7 @@ build_archive_staging_tree() {
 		if ! stage_archive_file \
 			"$source_file" \
 			"$relative_path" \
-			"$staging_root"
-		then
+			"$staging_root"; then
 			return 1
 		fi
 	done <"$sorted_file"
@@ -1739,8 +1723,7 @@ create_zip_archive() {
 	fi
 
 	if ! command -v powershell.exe >/dev/null 2>&1 ||
-		! command -v cygpath >/dev/null 2>&1
-	then
+		! command -v cygpath >/dev/null 2>&1; then
 		err "Neither zip nor the PowerShell archive fallback is available."
 		return 1
 	fi
@@ -1873,8 +1856,7 @@ main() {
 	if ! validate_dependencies ||
 		! initialize_paths ||
 		! validate_repository ||
-		! initialize_temp_directory
-	then
+		! initialize_temp_directory; then
 		return 1
 	fi
 
@@ -1893,33 +1875,33 @@ main() {
 	info "xemu root: $XEMU_ROOT"
 
 	case "$MODE" in
-		status)
-			if ! mode_status; then
-				return 1
-			fi
-			;;
-		capture)
-			if ! mode_capture; then
-				return 1
-			fi
-			;;
-		dry-run)
-			if ! mode_dry_run; then
-				return 1
-			fi
-			;;
-		archive)
-			if ! mode_archive; then
-				return 1
-			fi
-			;;
-		quit)
-			info "No changes were made."
-			;;
-		*)
-			err "Unhandled mode: $MODE"
+	status)
+		if ! mode_status; then
 			return 1
-			;;
+		fi
+		;;
+	capture)
+		if ! mode_capture; then
+			return 1
+		fi
+		;;
+	dry-run)
+		if ! mode_dry_run; then
+			return 1
+		fi
+		;;
+	archive)
+		if ! mode_archive; then
+			return 1
+		fi
+		;;
+	quit)
+		info "No changes were made."
+		;;
+	*)
+		err "Unhandled mode: $MODE"
+		return 1
+		;;
 	esac
 }
 

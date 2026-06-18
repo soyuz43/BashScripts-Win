@@ -1751,7 +1751,6 @@ capture_ungoogled_chromium_summary() {
 	} >"$output_file"
 }
 
-
 # ---------- Modes ----------
 mode_capture() {
 	local failed
@@ -1794,13 +1793,13 @@ mode_capture() {
 
 	ok "Dotfiles capture complete."
 	section "Repository files"
-	
+
 	if command -v tree >/dev/null 2>&1 &&
 		tree --version 2>&1 | grep -q '^tree v'; then
 		tree -a -I '.git' --noreport "$DOTFILES_DIR"
 	else
 		warn "GNU tree is unavailable; using find instead."
-	
+
 		find "$DOTFILES_DIR" \
 			-path "$DOTFILES_DIR/.git" -prune -o \
 			-type f -printf '  %P\n' |

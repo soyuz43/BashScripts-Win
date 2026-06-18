@@ -4,19 +4,11 @@
 
 set -euo pipefail
 
-# =========================
-# Configuration
-# =========================
-
 HISTORY_LIMIT=1000
 HISTORY_SCOPE="all"
 ALLOW_DIRTY=false
 BRANCH_SUFFIX="-provenance"
 TEMP_HISTORY_FILE=""
-
-# =========================
-# Colors
-# =========================
 
 RED='\033[1;31m'
 GREEN='\033[1;32m'
@@ -25,13 +17,8 @@ CYAN='\033[1;36m'
 DIM='\033[2m'
 RESET='\033[0m'
 
-# =========================
-# Output helpers
-# =========================
-
-die() {
+print_error() {
 	printf "%bError:%b %s\n" "$RED" "$RESET" "$*" >&2
-	exit 1
 }
 
 warn() {
@@ -80,28 +67,19 @@ Controls:
 Branch naming:
   The suffix "-provenance" is automatically added to branches
   created by this command.
-
-Example:
-  Input:  restore-old-parser
-  Result: restore-old-parser-provenance
 EOF
 }
 
-# =========================
-# Cleanup
-# =========================
-
 cleanup() {
 	if [[ -n "${TEMP_HISTORY_FILE:-}" ]]; then
-		rm -f -- "$TEMP_HISTORY_FILE"
+		if ! rm -f -- "$TEMP_HISTORY_FILE"; then
+			printf "%bWarning:%b Could not remove temporary file.\n" \
+				"$YELLOW" "$RESET" >&2
+		fi
 	fi
 }
 
 trap cleanup EXIT
-
-# =========================
-# Argument parsing
-# =========================
 
 parse_arguments() {
 	while (($#)); do
@@ -120,10 +98,15 @@ parse_arguments() {
 
 		--limit)
 			shift
-			(($#)) || die "--limit requires a number."
+
+			if (($# == 0)); then
+				print_error "--limit requires a number."
+				return 1
+			fi
 
 			if [[ ! "$1" =~ ^[1-9][0-9]*$ ]]; then
-				die "Invalid history limit: $1"
+				print_error "Invalid history limit: $1"
+				return 1
 			fi
 
 			HISTORY_LIMIT="$1"
@@ -131,11 +114,12 @@ parse_arguments() {
 
 		-h | --help)
 			print_help
-			exit 0
+			return 2
 			;;
 
 		*)
-			die "Unknown option: $1"
+			print_error "Unknown option: $1"
+			return 1
 			;;
 		esac
 
@@ -143,35 +127,144 @@ parse_arguments() {
 	done
 }
 
-# =========================
-# Environment validation
-# =========================
-
 require_command() {
-	command -v "$1" >/dev/null 2>&1 ||
-		die "Required command not found: $1"
+	local command_name
+	command_name=$1
+
+	if ! command -v "$command_name" >/dev/null 2>&1; then
+		print_error "Required command not found: $command_name"
+		return 1
+	fi
 }
 
 enter_repository_root() {
 	local repo_root
 
-	repo_root=$(git rev-parse --show-toplevel 2>/dev/null) ||
-		die "Not a Git repository."
+	if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+		print_error "Not a Git repository."
+		return 1
+	fi
 
-	cd "$repo_root"
+	if [[ -z "${repo_root//[[:space:]]/}" || ! -d "$repo_root" ]]; then
+		print_error "Git returned an invalid repository root."
+		return 1
+	fi
+
+	if ! cd -- "$repo_root"; then
+		print_error "Could not enter repository root: $repo_root"
+		return 1
+	fi
 }
 
-repository_is_dirty() {
-	[[ -n "$(git status --porcelain --untracked-files=normal)" ]]
+get_repository_state() {
+	local status_output
+
+	if ! status_output=$(
+		git status --porcelain --untracked-files=normal 2>/dev/null
+	); then
+		print_error "Could not inspect the working tree."
+		return 1
+	fi
+
+	if [[ -n "$status_output" ]]; then
+		printf "dirty"
+	else
+		printf "clean"
+	fi
 }
 
-# =========================
-# History construction
-# =========================
+preview_commit() {
+	local commit
+	local parents
+	local pr_url
+
+	commit=$1
+	parents=""
+	pr_url=""
+
+	if [[ ! "$commit" =~ ^[0-9a-fA-F]{7,64}$ ]]; then
+		printf "Invalid commit identifier.\n" >&2
+		return 1
+	fi
+
+	if ! parents=$(git show -s --format='%P' "$commit" 2>/dev/null); then
+		printf "Unable to read commit.\n" >&2
+		return 1
+	fi
+
+	if [[ "$parents" == *" "* ]] && command -v gh >/dev/null 2>&1; then
+		if ! pr_url=$(
+			gh api \
+				-H "Accept: application/vnd.github+json" \
+				"repos/{owner}/{repo}/commits/${commit}/pulls" \
+				--jq '
+					[
+						.[] |
+						select(
+							.merged_at != null and
+							.html_url != null
+						)
+					][0].html_url // empty
+				' \
+				2>/dev/null
+		); then
+			pr_url=""
+		fi
+	fi
+
+	pr_url=${pr_url//$'\r'/}
+	pr_url=${pr_url//$'\n'/}
+
+	if [[ ! "$pr_url" =~ ^https://[^[:space:]]+$ ]]; then
+		pr_url=""
+	fi
+
+	if [[ -z "$pr_url" ]]; then
+		git --no-pager show \
+			--color=always \
+			--stat \
+			--summary \
+			--format=fuller \
+			"$commit"
+		return
+	fi
+
+	git --no-pager show \
+		--color=always \
+		--stat \
+		--summary \
+		--format=fuller \
+		"$commit" |
+		awk -v pr_url="$pr_url" '
+			{
+				print
+
+				line = $0
+				gsub(/\033\[[0-9;]*m/, "", line)
+
+				if (!inserted && line ~ /^Merge:[[:space:]]/) {
+					pr_number = pr_url
+					sub(/^.*\/pull\//, "", pr_number)
+
+					printf "\033[1;36mPull request:\033[0m "
+					printf "\033]8;;%s\033\\", pr_url
+					printf "\033[4;36mOpen pull request #%s\033[0m", pr_number
+					printf "\033]8;;\033\\\n"
+
+					inserted = 1
+				}
+			}
+		'
+}
+
+export -f preview_commit
 
 build_history() {
-	local output_file="$1"
-	local -a scope_args=()
+	local output_file
+	local -a scope_args
+
+	output_file=$1
+	scope_args=()
 
 	if [[ "$HISTORY_SCOPE" == "all" ]]; then
 		scope_args+=(--all)
@@ -179,7 +272,7 @@ build_history() {
 		scope_args+=(HEAD)
 	fi
 
-	git log \
+	if ! git log \
 		"${scope_args[@]}" \
 		--graph \
 		--decorate \
@@ -213,15 +306,23 @@ build_history() {
 					subject,
 					refs
 			}
-		' >"$output_file"
+		' >"$output_file"; then
+		print_error "Could not build repository history."
+		return 1
+	fi
 
-	[[ -s "$output_file" ]] ||
-		die "No commits were found."
+	if [[ ! -s "$output_file" ]]; then
+		print_error "No commits were found."
+		return 1
+	fi
 }
 
 select_commit() {
-	local history_file="$1"
+	local history_file
 	local selection
+	local selected_commit
+
+	history_file=$1
 
 	if ! selection=$(
 		fzf \
@@ -236,7 +337,7 @@ select_commit() {
 			--prompt="Commit > " \
 			--pointer="▌" \
 			--header=$'provenance\nRepository history — Enter to branch · Esc to cancel · Ctrl-P to toggle preview' \
-			--preview='git --no-pager show --color=always --stat --summary --format=fuller {1}' \
+			--preview='bash -c '"'"'preview_commit "$1"'"'"' _ {1}' \
 			--preview-window='right,55%,wrap' \
 			--bind='ctrl-p:toggle-preview' \
 			<"$history_file"
@@ -244,26 +345,50 @@ select_commit() {
 		return 1
 	fi
 
-	printf "%s" "${selection%%$'\t'*}"
+	selected_commit=${selection%%$'\t'*}
+
+	if [[ ! "$selected_commit" =~ ^[0-9a-fA-F]{7,64}$ ]]; then
+		print_error "The selected commit identifier is invalid."
+		return 1
+	fi
+
+	printf "%s" "$selected_commit"
 }
 
-# =========================
-# Commit selection
-# =========================
-
 print_commit_selection() {
-	local commit="$1"
+	local commit
 	local short_hash
 	local date
 	local author
 	local subject
 	local refs
 
-	short_hash=$(git rev-parse --short "$commit")
-	date=$(git show -s --date=short --format='%ad' "$commit")
-	author=$(git show -s --format='%an' "$commit")
-	subject=$(git show -s --format='%s' "$commit")
-	refs=$(git show -s --format='%D' "$commit")
+	commit=$1
+
+	if ! short_hash=$(git rev-parse --short "$commit" 2>/dev/null); then
+		print_error "Could not read the selected commit hash."
+		return 1
+	fi
+
+	if ! date=$(git show -s --date=short --format='%ad' "$commit" 2>/dev/null); then
+		print_error "Could not read the selected commit date."
+		return 1
+	fi
+
+	if ! author=$(git show -s --format='%an' "$commit" 2>/dev/null); then
+		print_error "Could not read the selected commit author."
+		return 1
+	fi
+
+	if ! subject=$(git show -s --format='%s' "$commit" 2>/dev/null); then
+		print_error "Could not read the selected commit subject."
+		return 1
+	fi
+
+	if ! refs=$(git show -s --format='%D' "$commit" 2>/dev/null); then
+		print_error "Could not read the selected commit references."
+		return 1
+	fi
 
 	printf "\n%bSelected commit%b\n" "$CYAN" "$RESET"
 	printf "  Hash:    %s\n" "$short_hash"
@@ -282,11 +407,15 @@ confirm_branch_creation() {
 	while true; do
 		printf "\n%bCreate a new branch from this commit?%b ([y]/n): " \
 			"$YELLOW" "$RESET"
-		IFS= read -r decision
+
+		if ! IFS= read -r decision; then
+			printf "\n" >&2
+			return 1
+		fi
 
 		case "${decision:-y}" in
 		y | Y | yes | YES | Yes)
-			return 0
+			return
 			;;
 
 		n | N | no | NO | No)
@@ -302,32 +431,49 @@ confirm_branch_creation() {
 	done
 }
 
-# =========================
-# Branch naming
-# =========================
-
 slugify() {
-	local value="$1"
+	local value
+	local slug
 
-	printf "%s" "$value" |
-		tr '[:upper:]' '[:lower:]' |
-		sed -E \
-			-e 's/[^a-z0-9._-]+/-/g' \
-			-e 's/^-+//' \
-			-e 's/-+$//' \
-			-e 's/-+/-/g' |
-		cut -c1-48
+	value=$1
+
+	if ! slug=$(
+		printf "%s" "$value" |
+			tr '[:upper:]' '[:lower:]' |
+			sed -E \
+				-e 's/[^a-z0-9._-]+/-/g' \
+				-e 's/^-+//' \
+				-e 's/-+$//' \
+				-e 's/-+/-/g'
+	); then
+		print_error "Could not create a branch-name suggestion."
+		return 1
+	fi
+
+	printf "%.48s" "$slug"
 }
 
 suggest_branch_base() {
-	local commit="$1"
+	local commit
 	local subject
 	local slug
 	local short_hash
 
-	subject=$(git show -s --format='%s' "$commit")
-	slug=$(slugify "$subject")
-	short_hash=$(git rev-parse --short "$commit")
+	commit=$1
+
+	if ! subject=$(git show -s --format='%s' "$commit" 2>/dev/null); then
+		print_error "Could not read the commit subject."
+		return 1
+	fi
+
+	if ! slug=$(slugify "$subject"); then
+		return 1
+	fi
+
+	if ! short_hash=$(git rev-parse --short "$commit" 2>/dev/null); then
+		print_error "Could not shorten the commit hash."
+		return 1
+	fi
 
 	if [[ -n "$slug" ]]; then
 		printf "%s" "$slug"
@@ -337,7 +483,8 @@ suggest_branch_base() {
 }
 
 append_branch_suffix() {
-	local branch_base="$1"
+	local branch_base
+	branch_base=$1
 
 	if [[ "$branch_base" == *"$BRANCH_SUFFIX" ]]; then
 		printf "%s" "$branch_base"
@@ -347,20 +494,26 @@ append_branch_suffix() {
 }
 
 prompt_for_branch_name() {
-	local commit="$1"
+	local commit
 	local suggested_base
 	local branch_base
 	local branch_name
 
-	suggested_base=$(suggest_branch_base "$commit")
+	commit=$1
+
+	if ! suggested_base=$(suggest_branch_base "$commit"); then
+		return 1
+	fi
 
 	while true; do
-		# Human-facing prompts must go to stderr because stdout is
-		# captured by the caller as the function's return value.
 		printf "\n%bEnter a name for the new branch%b [%s]: " \
 			"$CYAN" "$RESET" "$suggested_base" >&2
 
-		IFS= read -r branch_base
+		if ! IFS= read -r branch_base; then
+			printf "\n" >&2
+			return 1
+		fi
+
 		branch_base=${branch_base:-$suggested_base}
 
 		case "$branch_base" in
@@ -369,7 +522,10 @@ prompt_for_branch_name() {
 			;;
 		esac
 
-		branch_name=$(append_branch_suffix "$branch_base")
+		if ! branch_name=$(append_branch_suffix "$branch_base"); then
+			print_error "Could not construct the branch name."
+			continue
+		fi
 
 		if ! git check-ref-format --branch "$branch_name" >/dev/null 2>&1; then
 			printf "%bInvalid branch name:%b %s\n" \
@@ -386,21 +542,26 @@ prompt_for_branch_name() {
 		printf "\n%bBranch to create:%b %s\n" \
 			"$CYAN" "$RESET" "$branch_name" >&2
 
-		# This must be the function's only stdout output.
 		printf "%s" "$branch_name"
-		return 0
+		return
 	done
 }
 
-# =========================
-# Branch creation
-# =========================
-
 create_branch() {
-	local branch_name="$1"
-	local commit="$2"
+	local branch_name
+	local commit
+	local repository_state
+	local short_hash
+	local subject
 
-	if repository_is_dirty; then
+	branch_name=$1
+	commit=$2
+
+	if ! repository_state=$(get_repository_state); then
+		return 1
+	fi
+
+	if [[ "$repository_state" == "dirty" ]]; then
 		if [[ "$ALLOW_DIRTY" != true ]]; then
 			printf "\n%bBranch creation blocked:%b the working tree contains uncommitted changes.\n" \
 				"$RED" "$RESET"
@@ -421,52 +582,105 @@ create_branch() {
 		return 1
 	fi
 
+	if ! short_hash=$(git rev-parse --short HEAD 2>/dev/null); then
+		short_hash="$commit"
+	fi
+
+	if ! subject=$(git show -s --format='%s' HEAD 2>/dev/null); then
+		subject="Unknown"
+	fi
+
 	printf "\n%bBranch created successfully.%b\n" "$GREEN" "$RESET"
 	printf "  Branch:  %s\n" "$branch_name"
-	printf "  Commit:  %s\n" "$(git rev-parse --short HEAD)"
-	printf "  Subject: %s\n" "$(git show -s --format='%s' HEAD)"
+	printf "  Commit:  %s\n" "$short_hash"
+	printf "  Subject: %s\n" "$subject"
 }
 
-# =========================
-# Main
-# =========================
-
 main() {
+	local parse_status
 	local selected_commit
 	local branch_name
 
-	parse_arguments "$@"
+	if parse_arguments "$@"; then
+		parse_status=0
+	else
+		parse_status=$?
 
-	require_command git
-	require_command fzf
-	require_command awk
-	require_command sed
+		if ((parse_status == 2)); then
+			return
+		fi
 
-	enter_repository_root
+		return 1
+	fi
 
-	TEMP_HISTORY_FILE=$(mktemp) ||
-		die "Could not create temporary history file."
+	if ! require_command git; then
+		return 1
+	fi
 
-	build_history "$TEMP_HISTORY_FILE"
+	if ! require_command fzf; then
+		return 1
+	fi
+
+	if ! require_command awk; then
+		return 1
+	fi
+
+	if ! require_command sed; then
+		return 1
+	fi
+
+	if ! require_command tr; then
+		return 1
+	fi
+
+	if ! require_command mktemp; then
+		return 1
+	fi
+
+	if ! enter_repository_root; then
+		return 1
+	fi
+
+	if ! TEMP_HISTORY_FILE=$(mktemp); then
+		print_error "Could not create a temporary history file."
+		return 1
+	fi
+
+	if [[ -z "$TEMP_HISTORY_FILE" || ! -f "$TEMP_HISTORY_FILE" ]]; then
+		print_error "The temporary history file is invalid."
+		return 1
+	fi
+
+	if ! build_history "$TEMP_HISTORY_FILE"; then
+		return 1
+	fi
 
 	if ! selected_commit=$(select_commit "$TEMP_HISTORY_FILE"); then
 		printf "%bSelection canceled.%b\n" "$DIM" "$RESET"
-		return 0
+		return
 	fi
 
-	git cat-file -e "${selected_commit}^{commit}" 2>/dev/null ||
-		die "The selected object is not a valid commit."
+	if ! git cat-file -e "${selected_commit}^{commit}" 2>/dev/null; then
+		print_error "The selected object is not a valid commit."
+		return 1
+	fi
 
-	print_commit_selection "$selected_commit"
+	if ! print_commit_selection "$selected_commit"; then
+		return 1
+	fi
 
-	confirm_branch_creation || return 0
+	if ! confirm_branch_creation; then
+		return
+	fi
 
 	if ! branch_name=$(prompt_for_branch_name "$selected_commit"); then
 		printf "%bBranch creation canceled.%b\n" "$DIM" "$RESET"
-		return 0
+		return
 	fi
 
-	create_branch "$branch_name" "$selected_commit"
+	if ! create_branch "$branch_name" "$selected_commit"; then
+		return 1
+	fi
 }
 
 main "$@"
