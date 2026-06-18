@@ -52,7 +52,20 @@ detect_crlf() {
 format_shell() {
 	if command -v shfmt >/dev/null 2>&1; then
 		echo -e "\n\e[1;3;36mFormatting shell scripts (shfmt)...\e[0m"
-		git ls-files -z --cached --others --exclude-standard '*.sh' | xargs -0 -r shfmt -w
+
+		local files=()
+
+		while IFS= read -r -d '' file; do
+			[[ -f "$file" ]] || continue
+			files+=("$file")
+		done < <(
+			git ls-files -z --cached --others --exclude-standard -- '*.sh'
+		)
+
+		if ((${#files[@]} > 0)); then
+			shfmt -w "${files[@]}"
+		fi
+
 		echo -e "\e[1;32mFormatting complete.\e[0m"
 	else
 		echo -e "\n\e[1;33mshfmt not installed — skipping.\e[0m"

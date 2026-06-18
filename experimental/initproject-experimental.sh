@@ -294,8 +294,8 @@ contains_control_characters() {
 	value=$1
 
 	[[ "$value" == *$'\r'* ||
-	   "$value" == *$'\n'* ||
-	   "$value" == *$'\t'* ]]
+		"$value" == *$'\n'* ||
+		"$value" == *$'\t'* ]]
 }
 
 sanitize_single_line() {
@@ -313,18 +313,18 @@ normalize_boolean() {
 	value=${1,,}
 
 	case "$value" in
-		1 | true | yes | y | on)
-			printf 'true'
-			;;
-		0 | false | no | n | off)
-			printf 'false'
-			;;
-		ask | auto)
-			printf '%s' "$value"
-			;;
-		*)
-			return 1
-			;;
+	1 | true | yes | y | on)
+		printf 'true'
+		;;
+	0 | false | no | n | off)
+		printf 'false'
+		;;
+	ask | auto)
+		printf '%s' "$value"
+		;;
+	*)
+		return 1
+		;;
 	esac
 }
 
@@ -333,18 +333,18 @@ normalize_visibility() {
 	value=${1,,}
 
 	case "$value" in
-		public | pub)
-			printf 'public'
-			;;
-		private | priv)
-			printf 'private'
-			;;
-		ask | "")
-			printf 'ask'
-			;;
-		*)
-			return 1
-			;;
+	public | pub)
+		printf 'public'
+		;;
+	private | priv)
+		printf 'private'
+		;;
+	ask | "")
+		printf 'ask'
+		;;
+	*)
+		return 1
+		;;
 	esac
 }
 
@@ -353,24 +353,24 @@ normalize_license() {
 	value=${1,,}
 
 	case "$value" in
-		"" | ask)
-			printf 'ask'
-			;;
-		none | no)
-			printf 'none'
-			;;
-		mit)
-			printf 'mit'
-			;;
-		apache | apache-2 | apache-2.0)
-			printf 'apache-2.0'
-			;;
-		gpl | gpl-3 | gpl-3.0 | gpl-3.0-only)
-			printf 'gpl-3.0'
-			;;
-		*)
-			return 1
-			;;
+	"" | ask)
+		printf 'ask'
+		;;
+	none | no)
+		printf 'none'
+		;;
+	mit)
+		printf 'mit'
+		;;
+	apache | apache-2 | apache-2.0)
+		printf 'apache-2.0'
+		;;
+	gpl | gpl-3 | gpl-3.0 | gpl-3.0-only)
+		printf 'gpl-3.0'
+		;;
+	*)
+		return 1
+		;;
 	esac
 }
 
@@ -379,9 +379,9 @@ validate_hostname() {
 	hostname=$1
 
 	[[ "$hostname" =~ ^[A-Za-z0-9.-]+$ &&
-	   "$hostname" != .* &&
-	   "$hostname" != *. &&
-	   "$hostname" != *..* ]]
+		"$hostname" != .* &&
+		"$hostname" != *. &&
+		"$hostname" != *..* ]]
 }
 
 validate_repository_owner() {
@@ -389,7 +389,7 @@ validate_repository_owner() {
 	owner=$1
 
 	[[ "$owner" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ &&
-	   "$owner" != *- ]]
+		"$owner" != *- ]]
 }
 
 validate_email() {
@@ -599,8 +599,7 @@ run_network_command() {
 	while ((attempt <= NETWORK_ATTEMPTS)); do
 		if run_captured_with_spinner \
 			"$label (attempt $attempt/$NETWORK_ATTEMPTS)" \
-			"$@"
-		then
+			"$@"; then
 			return
 		fi
 
@@ -688,18 +687,17 @@ initialize_environment_values() {
 	SECRET_SCAN=${SECRET_SCAN,,}
 
 	case "$SECRET_SCAN" in
-		true | false | auto)
-			;;
-		1 | yes | y | on)
-			SECRET_SCAN="true"
-			;;
-		0 | no | n | off)
-			SECRET_SCAN="false"
-			;;
-		*)
-			print_error "Invalid SECRET_SCAN value: $SECRET_SCAN"
-			return 1
-			;;
+	true | false | auto) ;;
+	1 | yes | y | on)
+		SECRET_SCAN="true"
+		;;
+	0 | no | n | off)
+		SECRET_SCAN="false"
+		;;
+	*)
+		print_error "Invalid SECRET_SCAN value: $SECRET_SCAN"
+		return 1
+		;;
 	esac
 }
 
@@ -713,15 +711,13 @@ set_remote_request() {
 	fi
 
 	if [[ "$REMOTE_REQUEST" != "ask" &&
-	      "$REMOTE_REQUEST" != "$value" ]]
-	then
+		"$REMOTE_REQUEST" != "$value" ]]; then
 		print_error "Conflicting remote creation options were provided."
 		return 1
 	fi
 
 	if [[ "$value" == "false" &&
-	      "$REPOSITORY_VISIBILITY" != "ask" ]]
-	then
+		"$REPOSITORY_VISIBILITY" != "ask" ]]; then
 		print_error "--no-remote cannot be combined with repository visibility."
 		return 1
 	fi
@@ -744,8 +740,7 @@ set_repository_visibility() {
 	fi
 
 	if [[ "$REPOSITORY_VISIBILITY" != "ask" &&
-	      "$REPOSITORY_VISIBILITY" != "$value" ]]
-	then
+		"$REPOSITORY_VISIBILITY" != "$value" ]]; then
 		print_error "Conflicting repository visibility options were provided."
 		return 1
 	fi
@@ -778,213 +773,213 @@ parse_arguments() {
 		argument=$1
 
 		case "$argument" in
-			--name)
-				shift
-				require_option_value "--name" "$#" || return 1
-				PROJECT_NAME=$1
-				;;
-			--name=*)
-				PROJECT_NAME=${argument#*=}
-				;;
-			--base-dir)
-				shift
-				require_option_value "--base-dir" "$#" || return 1
-				BASE_DIR=$1
-				;;
-			--base-dir=*)
-				BASE_DIR=${argument#*=}
-				;;
-			--feature-branch)
-				shift
-				require_option_value "--feature-branch" "$#" || return 1
-				FEATURE_BRANCH=$1
-				;;
-			--feature-branch=*)
-				FEATURE_BRANCH=${argument#*=}
-				;;
-			--initial-branch)
-				shift
-				require_option_value "--initial-branch" "$#" || return 1
-				INITIAL_BRANCH=$1
-				;;
-			--initial-branch=*)
-				INITIAL_BRANCH=${argument#*=}
-				;;
-			--description)
-				shift
-				require_option_value "--description" "$#" || return 1
-				PROJECT_DESCRIPTION=$1
-				;;
-			--description=*)
-				PROJECT_DESCRIPTION=${argument#*=}
-				;;
-			--language)
-				shift
-				require_option_value "--language" "$#" || return 1
-				LANGUAGE=$1
-				;;
-			--language=*)
-				LANGUAGE=${argument#*=}
-				;;
-			--license)
-				shift
-				require_option_value "--license" "$#" || return 1
-				if ! normalized=$(normalize_license "$1"); then
-					print_error "Unsupported license: $1"
-					return 1
-				fi
-				LICENSE_ID=$normalized
-				;;
-			--license=*)
-				if ! normalized=$(normalize_license "${argument#*=}"); then
-					print_error "Unsupported license: ${argument#*=}"
-					return 1
-				fi
-				LICENSE_ID=$normalized
-				;;
-			--remote)
-				set_remote_request "true" || return 1
-				;;
-			--no-remote | --local-only)
-				set_remote_request "false" || return 1
-				;;
-			--pub | --public | --pubic)
-				set_repository_visibility "public" || return 1
-				;;
-			--priv | --private)
-				set_repository_visibility "private" || return 1
-				;;
-			--org)
-				shift
-				require_option_value "--org" "$#" || return 1
-				GITHUB_ORG=$1
-				REMOTE_REQUEST="true"
-				;;
-			--org=*)
-				GITHUB_ORG=${argument#*=}
-				REMOTE_REQUEST="true"
-				;;
-			--github-host)
-				shift
-				require_option_value "--github-host" "$#" || return 1
-				GITHUB_HOST=$1
-				;;
-			--github-host=*)
-				GITHUB_HOST=${argument#*=}
-				;;
-			--ci)
-				CREATE_CI="true"
-				;;
-			--no-ci)
-				CREATE_CI="false"
-				;;
-			--sign)
-				SIGN_COMMIT="true"
-				;;
-			--no-sign)
-				SIGN_COMMIT="false"
-				;;
-			--secret-scan)
-				SECRET_SCAN="true"
-				;;
-			--no-secret-scan)
-				SECRET_SCAN="false"
-				;;
-			--shared-repository)
-				shift
-				require_option_value "--shared-repository" "$#" || return 1
-				SHARED_REPOSITORY=$1
-				;;
-			--shared-repository=*)
-				SHARED_REPOSITORY=${argument#*=}
-				;;
-			--adopt-existing)
-				ADOPT_EXISTING="true"
-				;;
-			--adopt-existing-remote)
-				ADOPT_EXISTING_REMOTE="true"
-				REMOTE_REQUEST="true"
-				;;
-			--template)
-				shift
-				require_option_value "--template" "$#" || return 1
-				TEMPLATE_SOURCE=$1
-				;;
-			--template=*)
-				TEMPLATE_SOURCE=${argument#*=}
-				;;
-			--post-init)
-				shift
-				require_option_value "--post-init" "$#" || return 1
-				POST_INIT=$1
-				;;
-			--post-init=*)
-				POST_INIT=${argument#*=}
-				;;
-			--no-metadata)
-				CREATE_METADATA=0
-				;;
-			--rollback-on-failure)
-				ROLLBACK_MODE="true"
-				;;
-			--preserve-on-failure)
-				ROLLBACK_MODE="false"
-				;;
-			--open-editor)
-				OPEN_EDITOR="true"
-				;;
-			--no-open-editor)
-				OPEN_EDITOR="false"
-				;;
-			--editor)
-				shift
-				require_option_value "--editor" "$#" || return 1
-				EDITOR_COMMAND=$1
-				OPEN_EDITOR="true"
-				;;
-			--editor=*)
-				EDITOR_COMMAND=${argument#*=}
-				OPEN_EDITOR="true"
-				;;
-			--navigate)
-				AUTO_NAVIGATE="true"
-				;;
-			--no-navigate)
-				AUTO_NAVIGATE="false"
-				;;
-			--notify)
-				SEND_NOTIFICATION="true"
-				;;
-			--no-notify)
-				SEND_NOTIFICATION="false"
-				;;
-			--dry-run)
-				DRY_RUN=1
-				;;
-			--non-interactive | --yes)
-				NON_INTERACTIVE="true"
-				ASSUME_YES=1
-				;;
-			-h | --help)
-				SHOW_HELP=1
-				;;
-			--)
-				shift
-
-				while (($# > 0)); do
-					positional_arguments+=("$1")
-					shift
-				done
-
-				break
-				;;
-			-*)
-				print_error "Unknown option: $argument"
+		--name)
+			shift
+			require_option_value "--name" "$#" || return 1
+			PROJECT_NAME=$1
+			;;
+		--name=*)
+			PROJECT_NAME=${argument#*=}
+			;;
+		--base-dir)
+			shift
+			require_option_value "--base-dir" "$#" || return 1
+			BASE_DIR=$1
+			;;
+		--base-dir=*)
+			BASE_DIR=${argument#*=}
+			;;
+		--feature-branch)
+			shift
+			require_option_value "--feature-branch" "$#" || return 1
+			FEATURE_BRANCH=$1
+			;;
+		--feature-branch=*)
+			FEATURE_BRANCH=${argument#*=}
+			;;
+		--initial-branch)
+			shift
+			require_option_value "--initial-branch" "$#" || return 1
+			INITIAL_BRANCH=$1
+			;;
+		--initial-branch=*)
+			INITIAL_BRANCH=${argument#*=}
+			;;
+		--description)
+			shift
+			require_option_value "--description" "$#" || return 1
+			PROJECT_DESCRIPTION=$1
+			;;
+		--description=*)
+			PROJECT_DESCRIPTION=${argument#*=}
+			;;
+		--language)
+			shift
+			require_option_value "--language" "$#" || return 1
+			LANGUAGE=$1
+			;;
+		--language=*)
+			LANGUAGE=${argument#*=}
+			;;
+		--license)
+			shift
+			require_option_value "--license" "$#" || return 1
+			if ! normalized=$(normalize_license "$1"); then
+				print_error "Unsupported license: $1"
 				return 1
-				;;
-			*)
-				positional_arguments+=("$argument")
-				;;
+			fi
+			LICENSE_ID=$normalized
+			;;
+		--license=*)
+			if ! normalized=$(normalize_license "${argument#*=}"); then
+				print_error "Unsupported license: ${argument#*=}"
+				return 1
+			fi
+			LICENSE_ID=$normalized
+			;;
+		--remote)
+			set_remote_request "true" || return 1
+			;;
+		--no-remote | --local-only)
+			set_remote_request "false" || return 1
+			;;
+		--pub | --public | --pubic)
+			set_repository_visibility "public" || return 1
+			;;
+		--priv | --private)
+			set_repository_visibility "private" || return 1
+			;;
+		--org)
+			shift
+			require_option_value "--org" "$#" || return 1
+			GITHUB_ORG=$1
+			REMOTE_REQUEST="true"
+			;;
+		--org=*)
+			GITHUB_ORG=${argument#*=}
+			REMOTE_REQUEST="true"
+			;;
+		--github-host)
+			shift
+			require_option_value "--github-host" "$#" || return 1
+			GITHUB_HOST=$1
+			;;
+		--github-host=*)
+			GITHUB_HOST=${argument#*=}
+			;;
+		--ci)
+			CREATE_CI="true"
+			;;
+		--no-ci)
+			CREATE_CI="false"
+			;;
+		--sign)
+			SIGN_COMMIT="true"
+			;;
+		--no-sign)
+			SIGN_COMMIT="false"
+			;;
+		--secret-scan)
+			SECRET_SCAN="true"
+			;;
+		--no-secret-scan)
+			SECRET_SCAN="false"
+			;;
+		--shared-repository)
+			shift
+			require_option_value "--shared-repository" "$#" || return 1
+			SHARED_REPOSITORY=$1
+			;;
+		--shared-repository=*)
+			SHARED_REPOSITORY=${argument#*=}
+			;;
+		--adopt-existing)
+			ADOPT_EXISTING="true"
+			;;
+		--adopt-existing-remote)
+			ADOPT_EXISTING_REMOTE="true"
+			REMOTE_REQUEST="true"
+			;;
+		--template)
+			shift
+			require_option_value "--template" "$#" || return 1
+			TEMPLATE_SOURCE=$1
+			;;
+		--template=*)
+			TEMPLATE_SOURCE=${argument#*=}
+			;;
+		--post-init)
+			shift
+			require_option_value "--post-init" "$#" || return 1
+			POST_INIT=$1
+			;;
+		--post-init=*)
+			POST_INIT=${argument#*=}
+			;;
+		--no-metadata)
+			CREATE_METADATA=0
+			;;
+		--rollback-on-failure)
+			ROLLBACK_MODE="true"
+			;;
+		--preserve-on-failure)
+			ROLLBACK_MODE="false"
+			;;
+		--open-editor)
+			OPEN_EDITOR="true"
+			;;
+		--no-open-editor)
+			OPEN_EDITOR="false"
+			;;
+		--editor)
+			shift
+			require_option_value "--editor" "$#" || return 1
+			EDITOR_COMMAND=$1
+			OPEN_EDITOR="true"
+			;;
+		--editor=*)
+			EDITOR_COMMAND=${argument#*=}
+			OPEN_EDITOR="true"
+			;;
+		--navigate)
+			AUTO_NAVIGATE="true"
+			;;
+		--no-navigate)
+			AUTO_NAVIGATE="false"
+			;;
+		--notify)
+			SEND_NOTIFICATION="true"
+			;;
+		--no-notify)
+			SEND_NOTIFICATION="false"
+			;;
+		--dry-run)
+			DRY_RUN=1
+			;;
+		--non-interactive | --yes)
+			NON_INTERACTIVE="true"
+			ASSUME_YES=1
+			;;
+		-h | --help)
+			SHOW_HELP=1
+			;;
+		--)
+			shift
+
+			while (($# > 0)); do
+				positional_arguments+=("$1")
+				shift
+			done
+
+			break
+			;;
+		-*)
+			print_error "Unknown option: $argument"
+			return 1
+			;;
+		*)
+			positional_arguments+=("$argument")
+			;;
 		esac
 
 		shift
@@ -997,8 +992,7 @@ parse_arguments() {
 
 	if ((${#positional_arguments[@]} >= 1)); then
 		if [[ -n "$PROJECT_NAME" &&
-		      "$PROJECT_NAME" != "${positional_arguments[0]}" ]]
-		then
+			"$PROJECT_NAME" != "${positional_arguments[0]}" ]]; then
 			print_error "Project name was provided more than once with different values."
 			return 1
 		fi
@@ -1008,8 +1002,7 @@ parse_arguments() {
 
 	if ((${#positional_arguments[@]} == 2)); then
 		if [[ -n "$FEATURE_BRANCH" &&
-		      "$FEATURE_BRANCH" != "${positional_arguments[1]}" ]]
-		then
+			"$FEATURE_BRANCH" != "${positional_arguments[1]}" ]]; then
 			print_error "Feature branch was provided more than once with different values."
 			return 1
 		fi
@@ -1065,9 +1058,8 @@ validate_dependencies() {
 	fi
 
 	if [[ -z "$BASH_PATH" ||
-	      ! -x "$BASH_PATH" ]] ||
-		contains_control_characters "$BASH_PATH"
-	then
+		! -x "$BASH_PATH" ]] ||
+		contains_control_characters "$BASH_PATH"; then
 		print_error "The detected Bash executable is unsafe or unavailable."
 		return 1
 	fi
@@ -1078,15 +1070,15 @@ expand_home_path() {
 	value=$1
 
 	case "$value" in
-		"~")
-			printf '%s' "$HOME"
-			;;
-		"$HOME"*)
-			printf '%s/%s' "$HOME" "${value#~/}"
-			;;
-		*)
-			printf '%s' "$value"
-			;;
+	"~")
+		printf '%s' "$HOME"
+		;;
+	"$HOME"*)
+		printf '%s/%s' "$HOME" "${value#~/}"
+		;;
+	*)
+		printf '%s' "$value"
+		;;
 	esac
 }
 
@@ -1107,16 +1099,15 @@ normalize_absolute_path() {
 
 	for component in "${components[@]}"; do
 		case "$component" in
-			"" | ".")
-				;;
-			"..")
-				if ((${#resolved[@]} > 0)); then
-					unset 'resolved[${#resolved[@]}-1]'
-				fi
-				;;
-			*)
-				resolved+=("$component")
-				;;
+		"" | ".") ;;
+		"..")
+			if ((${#resolved[@]} > 0)); then
+				unset 'resolved[${#resolved[@]}-1]'
+			fi
+			;;
+		*)
+			resolved+=("$component")
+			;;
 		esac
 	done
 
@@ -1197,9 +1188,8 @@ prepare_base_directory() {
 			fi
 
 			if [[ ! -d "$existing_parent" ||
-			      ! -w "$existing_parent" ||
-			      ! -x "$existing_parent" ]]
-			then
+				! -w "$existing_parent" ||
+				! -x "$existing_parent" ]]; then
 				print_error "The nearest existing BASE_DIR parent is not writable: $existing_parent"
 				return 1
 			fi
@@ -1215,9 +1205,8 @@ prepare_base_directory() {
 	fi
 
 	if [[ ! -d "$absolute" ||
-	      ! -w "$absolute" ||
-	      ! -x "$absolute" ]]
-	then
+		! -w "$absolute" ||
+		! -x "$absolute" ]]; then
 		print_error "BASE_DIR is not writable and searchable: $absolute"
 		return 1
 	fi
@@ -1258,15 +1247,15 @@ initialize_logging() {
 	LOG_DIR="$data_root/bashscripts"
 	LOG_FILE="$LOG_DIR/initproject-experimental.log"
 
-    if ! mkdir -p -- "$LOG_DIR"; then
-    	print_error "Unable to create log directory: $LOG_DIR"
-    	return 1
-    fi
+	if ! mkdir -p -- "$LOG_DIR"; then
+		print_error "Unable to create log directory: $LOG_DIR"
+		return 1
+	fi
 
-    if ! chmod 700 -- "$LOG_DIR"; then
-    	print_error "Unable to secure log directory permissions: $LOG_DIR"
-    	return 1
-    fi
+	if ! chmod 700 -- "$LOG_DIR"; then
+		print_error "Unable to secure log directory permissions: $LOG_DIR"
+		return 1
+	fi
 
 	if ! rotate_log_if_needed; then
 		return 1
@@ -1345,8 +1334,7 @@ create_runtime_directory() {
 	fi
 
 	if [[ -z "$RUNTIME_DIR" ||
-	      ! -d "$RUNTIME_DIR" ]]
-	then
+		! -d "$RUNTIME_DIR" ]]; then
 		print_error "The runtime directory is invalid."
 		return 1
 	fi
@@ -1409,16 +1397,16 @@ prompt_yes_no() {
 	fi
 
 	case "$default_answer" in
-		y)
-			suffix="[Y/n]"
-			;;
-		n)
-			suffix="[y/N]"
-			;;
-		*)
-			print_error "Invalid confirmation default: $default_answer"
-			return 2
-			;;
+	y)
+		suffix="[Y/n]"
+		;;
+	n)
+		suffix="[y/N]"
+		;;
+	*)
+		print_error "Invalid confirmation default: $default_answer"
+		return 2
+		;;
 	esac
 
 	while true; do
@@ -1441,16 +1429,16 @@ prompt_yes_no() {
 		fi
 
 		case "$response" in
-			y | yes)
-				return 0
-				;;
-			n | no)
-				return 1
-				;;
-			*)
-				printf "%bInvalid response.%b Enter y or n.\n" \
-					"$RED" "$RESET" >&2
-				;;
+		y | yes)
+			return 0
+			;;
+		n | no)
+			return 1
+			;;
+		*)
+			printf "%bInvalid response.%b Enter y or n.\n" \
+				"$RED" "$RESET" >&2
+			;;
 		esac
 	done
 }
@@ -1515,17 +1503,17 @@ collect_remote_request() {
 		selection=${PROMPT_RESULT,,}
 
 		case "$selection" in
-			1 | y | yes)
-				REMOTE_REQUEST="true"
-				return
-				;;
-			2 | n | no)
-				REMOTE_REQUEST="false"
-				return
-				;;
-			*)
-				print_warning "Enter 1 or 2."
-				;;
+		1 | y | yes)
+			REMOTE_REQUEST="true"
+			return
+			;;
+		2 | n | no)
+			REMOTE_REQUEST="false"
+			return
+			;;
+		*)
+			print_warning "Enter 1 or 2."
+			;;
 		esac
 	done
 }
@@ -1534,8 +1522,7 @@ collect_visibility() {
 	local selection
 
 	if [[ "$REMOTE_REQUEST" != "true" ||
-	      "$REPOSITORY_VISIBILITY" != "ask" ]]
-	then
+		"$REPOSITORY_VISIBILITY" != "ask" ]]; then
 		return
 	fi
 
@@ -1555,17 +1542,17 @@ collect_visibility() {
 		selection=${PROMPT_RESULT,,}
 
 		case "$selection" in
-			1 | private | priv)
-				REPOSITORY_VISIBILITY="private"
-				return
-				;;
-			2 | public | pub)
-				REPOSITORY_VISIBILITY="public"
-				return
-				;;
-			*)
-				print_warning "Enter 1 or 2."
-				;;
+		1 | private | priv)
+			REPOSITORY_VISIBILITY="private"
+			return
+			;;
+		2 | public | pub)
+			REPOSITORY_VISIBILITY="public"
+			return
+			;;
+		*)
+			print_warning "Enter 1 or 2."
+			;;
 		esac
 	done
 }
@@ -1595,25 +1582,25 @@ collect_license() {
 		selection=${PROMPT_RESULT,,}
 
 		case "$selection" in
-			1 | none)
-				LICENSE_ID="none"
-				return
-				;;
-			2 | mit)
-				LICENSE_ID="mit"
-				return
-				;;
-			3 | apache | apache-2.0)
-				LICENSE_ID="apache-2.0"
-				return
-				;;
-			4 | gpl | gpl-3.0)
-				LICENSE_ID="gpl-3.0"
-				return
-				;;
-			*)
-				print_warning "Enter a number from 1 through 4."
-				;;
+		1 | none)
+			LICENSE_ID="none"
+			return
+			;;
+		2 | mit)
+			LICENSE_ID="mit"
+			return
+			;;
+		3 | apache | apache-2.0)
+			LICENSE_ID="apache-2.0"
+			return
+			;;
+		4 | gpl | gpl-3.0)
+			LICENSE_ID="gpl-3.0"
+			return
+			;;
+		*)
+			print_warning "Enter a number from 1 through 4."
+			;;
 		esac
 	done
 }
@@ -1668,9 +1655,8 @@ validate_project_configuration() {
 	fi
 
 	if [[ ! "$PROJECT_NAME" =~ ^[A-Za-z0-9._-]+$ ||
-	      "$PROJECT_NAME" == "." ||
-	      "$PROJECT_NAME" == ".." ]]
-	then
+		"$PROJECT_NAME" == "." ||
+		"$PROJECT_NAME" == ".." ]]; then
 		print_error "Project name may contain only letters, numbers, '.', '-', and '_'."
 		return 1
 	fi
@@ -1705,15 +1691,13 @@ validate_project_configuration() {
 	fi
 
 	if [[ -n "$PROJECT_DESCRIPTION" ]] &&
-		contains_control_characters "$PROJECT_DESCRIPTION"
-	then
+		contains_control_characters "$PROJECT_DESCRIPTION"; then
 		print_error "Project description must be a single line."
 		return 1
 	fi
 
 	if [[ -n "$GITHUB_ORG" ]] &&
-		! validate_repository_owner "$GITHUB_ORG"
-	then
+		! validate_repository_owner "$GITHUB_ORG"; then
 		print_error "Invalid GitHub organization name: $GITHUB_ORG"
 		return 1
 	fi
@@ -1724,8 +1708,7 @@ validate_project_configuration() {
 	fi
 
 	if [[ -n "$SHARED_REPOSITORY" &&
-	      ! "$SHARED_REPOSITORY" =~ ^(group|true|all|world|everybody|umask|false|0[0-7]{3})$ ]]
-	then
+		! "$SHARED_REPOSITORY" =~ ^(group|true|all|world|everybody|umask|false|0[0-7]{3})$ ]]; then
 		print_error "Invalid core.sharedRepository value: $SHARED_REPOSITORY"
 		return 1
 	fi
@@ -1773,16 +1756,14 @@ validate_optional_sources() {
 		POST_INIT=$resolved
 
 		if [[ ! -f "$POST_INIT" ||
-		      ! -r "$POST_INIT" ]]
-		then
+			! -r "$POST_INIT" ]]; then
 			print_error "Post-init hook is not a readable file: $POST_INIT"
 			return 1
 		fi
 	fi
 
 	if [[ -n "$TEMPLATE_SOURCE" &&
-	      -e "$TEMPLATE_SOURCE" ]]
-	then
+		-e "$TEMPLATE_SOURCE" ]]; then
 		if [[ ! -d "$TEMPLATE_SOURCE" ]]; then
 			print_error "Local template source is not a directory: $TEMPLATE_SOURCE"
 			return 1
@@ -1803,8 +1784,7 @@ inspect_existing_project_path() {
 	fi
 
 	if [[ ! -w "$PROJECT_PATH" ||
-	      ! -x "$PROJECT_PATH" ]]
-	then
+		! -x "$PROJECT_PATH" ]]; then
 		print_error "Existing project directory is not writable: $PROJECT_PATH"
 		return 1
 	fi
@@ -1814,8 +1794,7 @@ inspect_existing_project_path() {
 			ADOPT_EXISTING="false"
 		elif prompt_yes_no \
 			"Project directory already exists. Adopt it without deleting existing files?" \
-			"n"
-		then
+			"n"; then
 			ADOPT_EXISTING="true"
 		else
 			ADOPT_EXISTING="false"
@@ -1835,13 +1814,11 @@ inspect_existing_project_path() {
 	fi
 
 	if [[ -n "$first_entry" &&
-	      ! -d "$PROJECT_PATH/.git" &&
-	      "$NON_INTERACTIVE" != "true" ]]
-	then
+		! -d "$PROJECT_PATH/.git" &&
+		"$NON_INTERACTIVE" != "true" ]]; then
 		if ! prompt_yes_no \
 			"The directory is non-empty and is not a Git repository. Continue?" \
-			"n"
-		then
+			"n"; then
 			print_error "Existing directory adoption was declined."
 			return 1
 		fi
@@ -1884,8 +1861,7 @@ acquire_project_lock() {
 	fi
 
 	if [[ "$lock_pid" =~ ^[0-9]+$ ]] &&
-		kill -0 "$lock_pid" 2>/dev/null
-	then
+		kill -0 "$lock_pid" 2>/dev/null; then
 		print_error "Another process is already initializing this project (PID $lock_pid)."
 		return 1
 	fi
@@ -1909,8 +1885,7 @@ acquire_project_lock() {
 release_project_lock() {
 	if ((LOCK_ACQUIRED)) &&
 		[[ -n "$LOCK_DIR" &&
-		   -d "$LOCK_DIR" ]]
-	then
+			-d "$LOCK_DIR" ]]; then
 		rm -rf -- "$LOCK_DIR"
 	fi
 
@@ -1929,14 +1904,12 @@ read_git_identity() {
 	fi
 
 	if [[ -z "$GIT_USER_NAME" &&
-	      -n "${GIT_AUTHOR_NAME:-}" ]]
-	then
+		-n "${GIT_AUTHOR_NAME:-}" ]]; then
 		GIT_USER_NAME=$GIT_AUTHOR_NAME
 	fi
 
 	if [[ -z "$GIT_USER_EMAIL" &&
-	      -n "${GIT_AUTHOR_EMAIL:-}" ]]
-	then
+		-n "${GIT_AUTHOR_EMAIL:-}" ]]; then
 		GIT_USER_EMAIL=$GIT_AUTHOR_EMAIL
 	fi
 }
@@ -1945,8 +1918,7 @@ collect_missing_git_identity() {
 	local set_globally
 
 	if [[ -n "$GIT_USER_NAME" &&
-	      -n "$GIT_USER_EMAIL" ]]
-	then
+		-n "$GIT_USER_EMAIL" ]]; then
 		return
 	fi
 
@@ -1954,8 +1926,7 @@ collect_missing_git_identity() {
 
 	if [[ "$NON_INTERACTIVE" == "true" ]]; then
 		if [[ -z "$GIT_USER_NAME" ||
-		      -z "$GIT_USER_EMAIL" ]]
-		then
+			-z "$GIT_USER_EMAIL" ]]; then
 			print_error "Git user.name and user.email are required before creating the initial commit."
 			printf '%s\n' \
 				'Set them with:' \
@@ -1986,8 +1957,7 @@ collect_missing_git_identity() {
 	fi
 
 	if contains_control_characters "$GIT_USER_NAME" ||
-		[[ -z "${GIT_USER_NAME//[[:space:]]/}" ]]
-	then
+		[[ -z "${GIT_USER_NAME//[[:space:]]/}" ]]; then
 		print_error "Git user name is invalid."
 		return 1
 	fi
@@ -2011,15 +1981,13 @@ collect_missing_git_identity() {
 	if ((set_globally)); then
 		if ! run_checked \
 			"Unable to configure global Git user.name." \
-			git config --global user.name "$GIT_USER_NAME"
-		then
+			git config --global user.name "$GIT_USER_NAME"; then
 			return 1
 		fi
 
 		if ! run_checked \
 			"Unable to configure global Git user.email." \
-			git config --global user.email "$GIT_USER_EMAIL"
-		then
+			git config --global user.email "$GIT_USER_EMAIL"; then
 			return 1
 		fi
 
@@ -2040,8 +2008,7 @@ resolve_commit_signing() {
 	fi
 
 	if [[ "$SIGN_COMMIT" == "true" &&
-	      -z "$GIT_SIGNING_KEY" ]]
-	then
+		-z "$GIT_SIGNING_KEY" ]]; then
 		print_error "--sign was requested, but user.signingkey is not configured."
 		return 1
 	fi
@@ -2078,8 +2045,7 @@ resolve_commit_signing() {
 
 	if prompt_yes_no \
 		"Sign the initial commit using the configured signing key?" \
-		"$signing_default"
-	then
+		"$signing_default"; then
 		SIGN_COMMIT="true"
 	else
 		SIGN_COMMIT="false"
@@ -2121,16 +2087,14 @@ check_github_cli_support() {
 
 ensure_github_authentication() {
 	if env "GH_HOST=$GITHUB_HOST" \
-		gh auth status --hostname "$GITHUB_HOST" >/dev/null 2>&1
-	then
+		gh auth status --hostname "$GITHUB_HOST" >/dev/null 2>&1; then
 		return
 	fi
 
 	print_warning "GitHub CLI is not authenticated for $GITHUB_HOST."
 
 	if [[ "$NON_INTERACTIVE" == "true" ||
-	      $DRY_RUN -eq 1 ]]
-	then
+		$DRY_RUN -eq 1 ]]; then
 		print_error "Authenticate before using non-interactive GitHub operations."
 		printf 'Run: gh auth login --hostname %q\n' "$GITHUB_HOST" >&2
 		return 1
@@ -2146,8 +2110,7 @@ ensure_github_authentication() {
 		gh auth login --hostname "$GITHUB_HOST" || return 1
 
 	if ! env "GH_HOST=$GITHUB_HOST" \
-		gh auth status --hostname "$GITHUB_HOST" >/dev/null 2>&1
-	then
+		gh auth status --hostname "$GITHUB_HOST" >/dev/null 2>&1; then
 		print_error "GitHub authentication could not be verified."
 		return 1
 	fi
@@ -2159,8 +2122,7 @@ check_github_auth_scopes() {
 	local normalized_scopes
 
 	if ! headers=$(env "GH_HOST=$GITHUB_HOST" \
-		gh api --hostname "$GITHUB_HOST" --include user 2>/dev/null)
-	then
+		gh api --hostname "$GITHUB_HOST" --include user 2>/dev/null); then
 		print_warning "Unable to inspect GitHub token scopes."
 		return
 	fi
@@ -2193,8 +2155,7 @@ check_github_auth_scopes() {
 		fi
 	else
 		if [[ "$normalized_scopes" != *,repo,* &&
-		      "$normalized_scopes" != *,public_repo,* ]]
-		then
+			"$normalized_scopes" != *,public_repo,* ]]; then
 			print_warning "The token does not report 'repo' or 'public_repo' scope."
 		fi
 	fi
@@ -2211,15 +2172,13 @@ resolve_github_owner() {
 		TARGET_OWNER=$GITHUB_ORG
 	else
 		if ! login=$(env "GH_HOST=$GITHUB_HOST" \
-			gh api --hostname "$GITHUB_HOST" user --jq '.login' 2>/dev/null)
-		then
+			gh api --hostname "$GITHUB_HOST" user --jq '.login' 2>/dev/null); then
 			print_error "Unable to determine the authenticated GitHub account."
 			return 1
 		fi
 
 		if [[ -z "$login" ]] ||
-			! validate_repository_owner "$login"
-		then
+			! validate_repository_owner "$login"; then
 			print_error "GitHub returned an invalid account name."
 			return 1
 		fi
@@ -2248,16 +2207,14 @@ query_existing_github_repository() {
 			.sshUrl,
 			(.isPrivate | tostring),
 			(.defaultBranchRef.name // "")
-		] | @tsv' 2>&1)
-	then
+		] | @tsv' 2>&1); then
 		:
 	else
 		status=$?
 
 		if grep -Eqi \
 			'(HTTP[[:space:]/.0-9]*404|not found|Could not resolve to a Repository)' \
-			<<<"$repository_data"
-		then
+			<<<"$repository_data"; then
 			return 1
 		fi
 
@@ -2278,16 +2235,14 @@ query_existing_github_repository() {
 	protocol="https"
 
 	if protocol=$(env "GH_HOST=$GITHUB_HOST" \
-		gh config get git_protocol --host "$GITHUB_HOST" 2>/dev/null)
-	then
+		gh config get git_protocol --host "$GITHUB_HOST" 2>/dev/null); then
 		:
 	else
 		protocol="https"
 	fi
 
 	if [[ "$protocol" == "ssh" &&
-	      -n "$ssh_url" ]]
-	then
+		-n "$ssh_url" ]]; then
 		REMOTE_URL=$ssh_url
 	else
 		REMOTE_URL=$web_url
@@ -2300,14 +2255,12 @@ query_existing_github_repository() {
 	fi
 
 	if [[ "$is_private" == "true" &&
-	      "$REPOSITORY_VISIBILITY" == "public" ]]
-	then
+		"$REPOSITORY_VISIBILITY" == "public" ]]; then
 		print_warning "The existing repository is private; requested public visibility will not be changed."
 	fi
 
 	if [[ "$is_private" == "false" &&
-	      "$REPOSITORY_VISIBILITY" == "private" ]]
-	then
+		"$REPOSITORY_VISIBILITY" == "private" ]]; then
 		print_warning "The existing repository is public; requested private visibility will not be changed."
 	fi
 
@@ -2324,34 +2277,33 @@ resolve_remote_collision() {
 	fi
 
 	case "$query_status" in
-		0)
-			if [[ "$ADOPT_EXISTING_REMOTE" == "ask" ]]; then
-				if [[ "$NON_INTERACTIVE" == "true" ]]; then
-					ADOPT_EXISTING_REMOTE="false"
-				elif prompt_yes_no \
-					"GitHub repository $REPOSITORY_FULL_NAME already exists. Connect to it?" \
-					"n"
-				then
-					ADOPT_EXISTING_REMOTE="true"
-				else
-					ADOPT_EXISTING_REMOTE="false"
-				fi
+	0)
+		if [[ "$ADOPT_EXISTING_REMOTE" == "ask" ]]; then
+			if [[ "$NON_INTERACTIVE" == "true" ]]; then
+				ADOPT_EXISTING_REMOTE="false"
+			elif prompt_yes_no \
+				"GitHub repository $REPOSITORY_FULL_NAME already exists. Connect to it?" \
+				"n"; then
+				ADOPT_EXISTING_REMOTE="true"
+			else
+				ADOPT_EXISTING_REMOTE="false"
 			fi
+		fi
 
-			if [[ "$ADOPT_EXISTING_REMOTE" != "true" ]]; then
-				print_error "GitHub repository already exists: $REPOSITORY_FULL_NAME"
-				return 1
-			fi
-
-			REMOTE_ACTION="adopt"
-			print_info "Existing GitHub repository will be connected as origin."
-			;;
-		1)
-			REMOTE_ACTION="create"
-			;;
-		*)
+		if [[ "$ADOPT_EXISTING_REMOTE" != "true" ]]; then
+			print_error "GitHub repository already exists: $REPOSITORY_FULL_NAME"
 			return 1
-			;;
+		fi
+
+		REMOTE_ACTION="adopt"
+		print_info "Existing GitHub repository will be connected as origin."
+		;;
+	1)
+		REMOTE_ACTION="create"
+		;;
+	*)
+		return 1
+		;;
 	esac
 }
 
@@ -2411,8 +2363,7 @@ print_plan() {
 confirm_execution() {
 	if ((DRY_RUN)) ||
 		[[ "$NON_INTERACTIVE" == "true" ]] ||
-		((ASSUME_YES))
-	then
+		((ASSUME_YES)); then
 		return
 	fi
 
@@ -2457,8 +2408,7 @@ copy_template_directory() {
 		--exclude='./.git' \
 		--exclude='.git' \
 		-cf - . |
-		tar -C "$PROJECT_PATH" -xf -
-	then
+		tar -C "$PROJECT_PATH" -xf -; then
 		print_error "Unable to copy project template."
 		return 1
 	fi
@@ -2579,59 +2529,59 @@ write_gitignore() {
 			'!.env.example'
 
 		case "$language_key" in
-			python | py)
-				printf '%s\n' \
-					'__pycache__/' \
-					'*.py[cod]' \
-					'.pytest_cache/' \
-					'.mypy_cache/' \
-					'.ruff_cache/' \
-					'.venv/' \
-					'venv/' \
-					'dist/' \
-					'build/' \
-					'*.egg-info/'
-				;;
-			node | nodejs | javascript | typescript | js | ts)
-				printf '%s\n' \
-					'node_modules/' \
-					'dist/' \
-					'build/' \
-					'coverage/' \
-					'.npm/' \
-					'.yarn/' \
-					'*.tsbuildinfo'
-				;;
-			rust)
-				printf '%s\n' \
-					'target/' \
-					'**/*.rs.bk'
-				;;
-			go | golang)
-				printf '%s\n' \
-					'bin/' \
-					'coverage.out' \
-					'*.test'
-				;;
-			java | kotlin)
-				printf '%s\n' \
-					'.gradle/' \
-					'build/' \
-					'target/' \
-					'*.class' \
-					'*.jar'
-				;;
-			c | cpp | c++)
-				printf '%s\n' \
-					'build/' \
-					'cmake-build-*/' \
-					'*.o' \
-					'*.obj' \
-					'*.a' \
-					'*.so' \
-					'*.dll' \
-					'*.exe'
-				;;
+		python | py)
+			printf '%s\n' \
+				'__pycache__/' \
+				'*.py[cod]' \
+				'.pytest_cache/' \
+				'.mypy_cache/' \
+				'.ruff_cache/' \
+				'.venv/' \
+				'venv/' \
+				'dist/' \
+				'build/' \
+				'*.egg-info/'
+			;;
+		node | nodejs | javascript | typescript | js | ts)
+			printf '%s\n' \
+				'node_modules/' \
+				'dist/' \
+				'build/' \
+				'coverage/' \
+				'.npm/' \
+				'.yarn/' \
+				'*.tsbuildinfo'
+			;;
+		rust)
+			printf '%s\n' \
+				'target/' \
+				'**/*.rs.bk'
+			;;
+		go | golang)
+			printf '%s\n' \
+				'bin/' \
+				'coverage.out' \
+				'*.test'
+			;;
+		java | kotlin)
+			printf '%s\n' \
+				'.gradle/' \
+				'build/' \
+				'target/' \
+				'*.class' \
+				'*.jar'
+			;;
+		c | cpp | c++)
+			printf '%s\n' \
+				'build/' \
+				'cmake-build-*/' \
+				'*.o' \
+				'*.obj' \
+				'*.a' \
+				'*.so' \
+				'*.dll' \
+				'*.exe'
+			;;
 		esac
 	} >"$gitignore_file"
 }
@@ -2674,16 +2624,16 @@ download_license_file() {
 	output_file=$1
 
 	case "$LICENSE_ID" in
-		apache-2.0)
-			license_url="https://raw.githubusercontent.com/spdx/license-list-data/main/text/Apache-2.0.txt"
-			;;
-		gpl-3.0)
-			license_url="https://raw.githubusercontent.com/spdx/license-list-data/main/text/GPL-3.0-only.txt"
-			;;
-		*)
-			print_error "Unsupported downloadable license: $LICENSE_ID"
-			return 1
-			;;
+	apache-2.0)
+		license_url="https://raw.githubusercontent.com/spdx/license-list-data/main/text/Apache-2.0.txt"
+		;;
+	gpl-3.0)
+		license_url="https://raw.githubusercontent.com/spdx/license-list-data/main/text/GPL-3.0-only.txt"
+		;;
+	*)
+		print_error "Unsupported downloadable license: $LICENSE_ID"
+		return 1
+		;;
 	esac
 
 	if command -v curl >/dev/null 2>&1; then
@@ -2806,8 +2756,8 @@ write_ci_workflow() {
 	fi
 
 	case "$language_key" in
-		python | py)
-			cat >"$workflow_file" <<'YAML'
+	python | py)
+		cat >"$workflow_file" <<'YAML'
 name: CI
 
 on:
@@ -2828,9 +2778,9 @@ jobs:
       - name: Validate Python sources
         run: python -m compileall src tests
 YAML
-			;;
-		node | nodejs | javascript | typescript | js | ts)
-			cat >"$workflow_file" <<'YAML'
+		;;
+	node | nodejs | javascript | typescript | js | ts)
+		cat >"$workflow_file" <<'YAML'
 name: CI
 
 on:
@@ -2855,9 +2805,9 @@ jobs:
         if: hashFiles('package.json') != ''
         run: npm test --if-present
 YAML
-			;;
-		rust)
-			cat >"$workflow_file" <<'YAML'
+		;;
+	rust)
+		cat >"$workflow_file" <<'YAML'
 name: CI
 
 on:
@@ -2879,9 +2829,9 @@ jobs:
         if: hashFiles('Cargo.toml') != ''
         run: cargo test
 YAML
-			;;
-		go | golang)
-			cat >"$workflow_file" <<'YAML'
+		;;
+	go | golang)
+		cat >"$workflow_file" <<'YAML'
 name: CI
 
 on:
@@ -2903,9 +2853,9 @@ jobs:
         if: hashFiles('go.mod') != ''
         run: go test ./...
 YAML
-			;;
-		*)
-			cat >"$workflow_file" <<'YAML'
+		;;
+	*)
+		cat >"$workflow_file" <<'YAML'
 name: CI
 
 on:
@@ -2925,7 +2875,7 @@ jobs:
           git status --short
           test -f README.md
 YAML
-			;;
+		;;
 	esac
 }
 
@@ -2939,8 +2889,7 @@ create_standard_structure() {
 		if ! mkdir -p -- \
 			"$PROJECT_PATH/src" \
 			"$PROJECT_PATH/tests" \
-			"$PROJECT_PATH/docs"
-		then
+			"$PROJECT_PATH/docs"; then
 			print_error "Unable to create project directory structure."
 			return 1
 		fi
@@ -3042,16 +2991,16 @@ run_secret_scan() {
 	fi
 
 	case "$scanner" in
-		gitleaks)
-			run_checked \
-				"gitleaks detected a secret or failed." \
-				gitleaks detect --source "$PROJECT_PATH" --no-git || return 1
-			;;
-		git-secrets)
-			run_checked \
-				"git-secrets detected a secret or failed." \
-				git -C "$PROJECT_PATH" secrets --scan -r || return 1
-			;;
+	gitleaks)
+		run_checked \
+			"gitleaks detected a secret or failed." \
+			gitleaks detect --source "$PROJECT_PATH" --no-git || return 1
+		;;
+	git-secrets)
+		run_checked \
+			"git-secrets detected a secret or failed." \
+			git -C "$PROJECT_PATH" secrets --scan -r || return 1
+		;;
 	esac
 
 	print_success "Secret scan completed."
@@ -3226,8 +3175,7 @@ create_github_repository() {
 	while ((attempt <= NETWORK_ATTEMPTS)); do
 		if run_captured_with_spinner \
 			"Creating GitHub repository (attempt $attempt/$NETWORK_ATTEMPTS)" \
-			"${create_command[@]}"
-		then
+			"${create_command[@]}"; then
 			REMOTE_CREATED=1
 			REMOTE_CREATION_CERTAIN=1
 			REMOTE_CONFIGURED=1
@@ -3249,8 +3197,7 @@ create_github_repository() {
 			print_warning "The repository exists after a failed create command; ownership of the creation is uncertain."
 
 			if ! REMOTE_URL=$(env "GH_HOST=$GITHUB_HOST" \
-				gh repo view "$REPOSITORY_FULL_NAME" --json url --jq '.url' 2>/dev/null)
-			then
+				gh repo view "$REPOSITORY_FULL_NAME" --json url --jq '.url' 2>/dev/null); then
 				print_error "Unable to retrieve the repository URL after creation."
 				return 1
 			fi
@@ -3277,17 +3224,17 @@ configure_remote_repository() {
 	fi
 
 	case "$REMOTE_ACTION" in
-		adopt)
-			add_origin_remote || return 1
-			print_success "Existing GitHub repository connected as origin."
-			;;
-		create)
-			create_github_repository || return 1
-			;;
-		*)
-			print_error "Invalid remote action: $REMOTE_ACTION"
-			return 1
-			;;
+	adopt)
+		add_origin_remote || return 1
+		print_success "Existing GitHub repository connected as origin."
+		;;
+	create)
+		create_github_repository || return 1
+		;;
+	*)
+		print_error "Invalid remote action: $REMOTE_ACTION"
+		return 1
+		;;
 	esac
 }
 
@@ -3297,8 +3244,7 @@ push_initial_branch() {
 	fi
 
 	if [[ "$REMOTE_ACTION" == "adopt" &&
-	      $REMOTE_HAS_HISTORY -eq 1 ]]
-	then
+		$REMOTE_HAS_HISTORY -eq 1 ]]; then
 		print_warning "The existing remote contains history; automatic push was skipped."
 		print_info "Review the remote history before merging or pushing."
 		return
@@ -3318,8 +3264,7 @@ create_feature_branch() {
 	fi
 
 	if git -C "$PROJECT_PATH" show-ref \
-		--verify --quiet "refs/heads/$FEATURE_BRANCH"
-	then
+		--verify --quiet "refs/heads/$FEATURE_BRANCH"; then
 		run_checked \
 			"Unable to switch to the existing feature branch." \
 			git -C "$PROJECT_PATH" switch "$FEATURE_BRANCH" || return 1
@@ -3357,14 +3302,12 @@ print_summary() {
 	printf "  cd %q\n" "$PROJECT_PATH"
 
 	if [[ -n "$FEATURE_BRANCH" &&
-	      $REMOTE_CONFIGURED -eq 1 ]]
-	then
+		$REMOTE_CONFIGURED -eq 1 ]]; then
 		printf "  git push -u origin %q\n" "$FEATURE_BRANCH"
 	fi
 
 	if [[ "$REMOTE_ACTION" == "adopt" &&
-	      $REMOTE_HAS_HISTORY -eq 1 ]]
-	then
+		$REMOTE_HAS_HISTORY -eq 1 ]]; then
 		printf "  git fetch origin\n"
 		printf "  git log --oneline --graph --decorate --all\n"
 	fi
@@ -3405,8 +3348,7 @@ open_project_editor() {
 		if [[ "$NON_INTERACTIVE" == "true" ]]; then
 			OPEN_EDITOR="false"
 		elif resolve_editor_command >/dev/null 2>&1 &&
-			prompt_yes_no "Open the project in the detected editor?" "n"
-		then
+			prompt_yes_no "Open the project in the detected editor?" "n"; then
 			OPEN_EDITOR="true"
 		else
 			OPEN_EDITOR="false"
@@ -3460,8 +3402,7 @@ send_desktop_notification() {
 	if command -v osascript >/dev/null 2>&1; then
 		if ! osascript \
 			-e "display notification \"${message//\"/\\\"}\" with title \"Project initialized\"" \
-			>/dev/null 2>&1
-		then
+			>/dev/null 2>&1; then
 			print_warning "Desktop notification failed."
 		fi
 		return
@@ -3477,10 +3418,9 @@ resolve_safe_shell() {
 	candidate=${SHELL:-}
 
 	if [[ -n "$candidate" &&
-	      "$candidate" == /* &&
-	      -x "$candidate" ]] &&
-		! contains_control_characters "$candidate"
-	then
+		"$candidate" == /* &&
+		-x "$candidate" ]] &&
+		! contains_control_characters "$candidate"; then
 		if [[ -r /etc/shells ]]; then
 			if grep -Fxq -- "$candidate" /etc/shells; then
 				printf '%s' "$candidate"
@@ -3488,20 +3428,19 @@ resolve_safe_shell() {
 			fi
 		else
 			case "${candidate##*/}" in
-				bash | zsh | ksh | fish)
-					printf '%s' "$candidate"
-					return
-					;;
+			bash | zsh | ksh | fish)
+				printf '%s' "$candidate"
+				return
+				;;
 			esac
 		fi
 	fi
 
 	for fallback in /bin/bash /usr/bin/bash "$BASH_PATH"; do
 		if [[ -n "$fallback" &&
-		      "$fallback" == /* &&
-		      -x "$fallback" ]] &&
-			! contains_control_characters "$fallback"
-		then
+			"$fallback" == /* &&
+			-x "$fallback" ]] &&
+			! contains_control_characters "$fallback"; then
 			printf '%s' "$fallback"
 			return
 		fi
@@ -3519,8 +3458,7 @@ cleanup_runtime_resources() {
 	release_project_lock
 
 	if [[ -n "$RUNTIME_DIR" &&
-	      -d "$RUNTIME_DIR" ]]
-	then
+		-d "$RUNTIME_DIR" ]]; then
 		rm -rf -- "$RUNTIME_DIR"
 	fi
 
@@ -3535,8 +3473,7 @@ open_project_shell() {
 			AUTO_NAVIGATE="false"
 		elif prompt_yes_no \
 			"Open an interactive shell in the new project directory?" \
-			"y"
-		then
+			"y"; then
 			AUTO_NAVIGATE="true"
 		else
 			AUTO_NAVIGATE="false"
@@ -3576,29 +3513,28 @@ confirm_rollback_resource() {
 	resource=$1
 
 	case "$ROLLBACK_MODE" in
-		true)
-			return 0
-			;;
-		false)
+	true)
+		return 0
+		;;
+	false)
+		return 1
+		;;
+	ask)
+		if [[ "$NON_INTERACTIVE" == "true" ]]; then
 			return 1
-			;;
-		ask)
-			if [[ "$NON_INTERACTIVE" == "true" ]]; then
-				return 1
-			fi
+		fi
 
-			prompt_yes_no "Delete $resource as part of rollback?" "n"
-			;;
-		*)
-			return 1
-			;;
+		prompt_yes_no "Delete $resource as part of rollback?" "n"
+		;;
+	*)
+		return 1
+		;;
 	esac
 }
 
 rollback_remote_repository() {
 	if ((REMOTE_CREATED == 0)) ||
-		[[ -z "$REPOSITORY_FULL_NAME" ]]
-	then
+		[[ -z "$REPOSITORY_FULL_NAME" ]]; then
 		return
 	fi
 
@@ -3608,8 +3544,7 @@ rollback_remote_repository() {
 	fi
 
 	if ! confirm_rollback_resource \
-		"GitHub repository $REPOSITORY_FULL_NAME"
-	then
+		"GitHub repository $REPOSITORY_FULL_NAME"; then
 		print_info "Preserving GitHub repository: $REPOSITORY_FULL_NAME"
 		return
 	fi
@@ -3619,8 +3554,7 @@ rollback_remote_repository() {
 	if ! run_network_command \
 		"Deleting GitHub repository" \
 		env "GH_HOST=$GITHUB_HOST" \
-		gh repo delete "$REPOSITORY_FULL_NAME" --yes
-	then
+		gh repo delete "$REPOSITORY_FULL_NAME" --yes; then
 		print_warning "Unable to delete GitHub repository during rollback."
 		return
 	fi
@@ -3630,21 +3564,18 @@ rollback_remote_repository() {
 
 rollback_local_project() {
 	if ((PROJECT_DIRECTORY_CREATED == 0)) ||
-		((PROJECT_DIRECTORY_ADOPTED))
-	then
+		((PROJECT_DIRECTORY_ADOPTED)); then
 		return
 	fi
 
 	if [[ -z "$PROJECT_PATH" ||
-	      "$PROJECT_PATH" == "/" ||
-	      ! -d "$PROJECT_PATH" ]]
-	then
+		"$PROJECT_PATH" == "/" ||
+		! -d "$PROJECT_PATH" ]]; then
 		return
 	fi
 
 	if ! confirm_rollback_resource \
-		"local project directory $PROJECT_PATH"
-	then
+		"local project directory $PROJECT_PATH"; then
 		print_info "Preserving local project directory: $PROJECT_PATH"
 		return
 	fi
@@ -3661,8 +3592,7 @@ rollback_local_project() {
 
 rollback_after_failure() {
 	if ((DRY_RUN)) ||
-		((PROJECT_COMPLETE))
-	then
+		((PROJECT_COMPLETE)); then
 		return
 	fi
 

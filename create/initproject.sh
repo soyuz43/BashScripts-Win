@@ -153,8 +153,8 @@ contains_control_characters() {
 	value=$1
 
 	[[ "$value" == *$'\r'* ||
-	   "$value" == *$'\n'* ||
-	   "$value" == *$'\t'* ]]
+		"$value" == *$'\n'* ||
+		"$value" == *$'\t'* ]]
 }
 
 sanitize_single_line_input() {
@@ -281,8 +281,7 @@ cleanup_on_error() {
 	if ((LOCAL_PROJECT_CREATED)) &&
 		[[ -n "$PROJECT_PATH" ]] &&
 		[[ "$PROJECT_PATH" != "/" ]] &&
-		[[ -d "$PROJECT_PATH" ]]
-	then
+		[[ -d "$PROJECT_PATH" ]]; then
 		printf 'Removing local project directory: %s\n' "$PROJECT_PATH" >&2
 
 		if ! rm -rf -- "$PROJECT_PATH"; then
@@ -358,8 +357,7 @@ set_repository_visibility() {
 	requested_visibility=$1
 
 	if [[ "$requested_visibility" != "public" &&
-	      "$requested_visibility" != "private" ]]
-	then
+		"$requested_visibility" != "private" ]]; then
 		print_error "Invalid repository visibility: $requested_visibility"
 		return 1
 	fi
@@ -370,8 +368,7 @@ set_repository_visibility() {
 	fi
 
 	if [[ "$REPOSITORY_VISIBILITY" != "ask" &&
-	      "$REPOSITORY_VISIBILITY" != "$requested_visibility" ]]
-	then
+		"$REPOSITORY_VISIBILITY" != "$requested_visibility" ]]; then
 		print_error "Conflicting repository visibility options were provided."
 		return 1
 	fi
@@ -391,50 +388,50 @@ parse_arguments() {
 		argument=$1
 
 		case "$argument" in
-			--dry-run)
-				DRY_RUN=1
-				;;
-			--remote)
-				if ! set_remote_request "yes"; then
-					return 1
-				fi
-				;;
-			--no-remote | --local-only)
-				if ! set_remote_request "no"; then
-					return 1
-				fi
-				;;
-			--pub | --public | --pubic)
-				if ! set_repository_visibility "public"; then
-					return 1
-				fi
-				;;
-			--priv | --private)
-				if ! set_repository_visibility "private"; then
-					return 1
-				fi
-				;;
-			-h | --help)
-				print_help
-				return 2
-				;;
-			--)
-				shift
-
-				while (($# > 0)); do
-					positional_arguments+=("$1")
-					shift
-				done
-
-				break
-				;;
-			-*)
-				print_error "Unknown option: $argument"
+		--dry-run)
+			DRY_RUN=1
+			;;
+		--remote)
+			if ! set_remote_request "yes"; then
 				return 1
-				;;
-			*)
-				positional_arguments+=("$argument")
-				;;
+			fi
+			;;
+		--no-remote | --local-only)
+			if ! set_remote_request "no"; then
+				return 1
+			fi
+			;;
+		--pub | --public | --pubic)
+			if ! set_repository_visibility "public"; then
+				return 1
+			fi
+			;;
+		--priv | --private)
+			if ! set_repository_visibility "private"; then
+				return 1
+			fi
+			;;
+		-h | --help)
+			print_help
+			return 2
+			;;
+		--)
+			shift
+
+			while (($# > 0)); do
+				positional_arguments+=("$1")
+				shift
+			done
+
+			break
+			;;
+		-*)
+			print_error "Unknown option: $argument"
+			return 1
+			;;
+		*)
+			positional_arguments+=("$argument")
+			;;
 		esac
 
 		shift
@@ -553,18 +550,18 @@ prompt_remote_request() {
 		selection=${selection,,}
 
 		case "$selection" in
-			"" | 1 | y | yes)
-				REMOTE_REQUEST="yes"
-				return
-				;;
-			2 | n | no)
-				REMOTE_REQUEST="no"
-				return
-				;;
-			*)
-				printf '%bInvalid selection.%b Enter 1 or 2.\n' \
-					"$RED" "$RESET" >&2
-				;;
+		"" | 1 | y | yes)
+			REMOTE_REQUEST="yes"
+			return
+			;;
+		2 | n | no)
+			REMOTE_REQUEST="no"
+			return
+			;;
+		*)
+			printf '%bInvalid selection.%b Enter 1 or 2.\n' \
+				"$RED" "$RESET" >&2
+			;;
 		esac
 	done
 }
@@ -603,18 +600,18 @@ prompt_repository_visibility() {
 		selection=${selection,,}
 
 		case "$selection" in
-			"" | 1 | private | priv)
-				REPOSITORY_VISIBILITY="private"
-				return
-				;;
-			2 | public | pub)
-				REPOSITORY_VISIBILITY="public"
-				return
-				;;
-			*)
-				printf '%bInvalid selection.%b Enter 1 or 2.\n' \
-					"$RED" "$RESET" >&2
-				;;
+		"" | 1 | private | priv)
+			REPOSITORY_VISIBILITY="private"
+			return
+			;;
+		2 | public | pub)
+			REPOSITORY_VISIBILITY="public"
+			return
+			;;
+		*)
+			printf '%bInvalid selection.%b Enter 1 or 2.\n' \
+				"$RED" "$RESET" >&2
+			;;
 		esac
 	done
 }
@@ -629,16 +626,16 @@ prompt_yes_no() {
 	default_answer=$2
 
 	case "$default_answer" in
-		y)
-			prompt_suffix="[Y/n]"
-			;;
-		n)
-			prompt_suffix="[y/N]"
-			;;
-		*)
-			print_error "Invalid confirmation default: $default_answer"
-			return 2
-			;;
+	y)
+		prompt_suffix="[Y/n]"
+		;;
+	n)
+		prompt_suffix="[y/N]"
+		;;
+	*)
+		print_error "Invalid confirmation default: $default_answer"
+		return 2
+		;;
 	esac
 
 	while true; do
@@ -661,16 +658,16 @@ prompt_yes_no() {
 		fi
 
 		case "$response" in
-			y | yes)
-				return 0
-				;;
-			n | no)
-				return 1
-				;;
-			*)
-				printf '%bInvalid response.%b Enter y or n.\n' \
-					"$RED" "$RESET" >&2
-				;;
+		y | yes)
+			return 0
+			;;
+		n | no)
+			return 1
+			;;
+		*)
+			printf '%bInvalid response.%b Enter y or n.\n' \
+				"$RED" "$RESET" >&2
+			;;
 		esac
 	done
 }
@@ -749,8 +746,7 @@ create_structure() {
 	if ! run_cmd mkdir -p -- \
 		"$PROJECT_PATH/src" \
 		"$PROJECT_PATH/tests" \
-		"$PROJECT_PATH/docs"
-	then
+		"$PROJECT_PATH/docs"; then
 		print_error "Unable to create the project directory structure."
 		return 1
 	fi
@@ -763,8 +759,7 @@ create_structure() {
 		"$PROJECT_PATH/README.md" \
 		"$PROJECT_PATH/.gitignore" \
 		"$PROJECT_PATH/LICENSE" \
-		"$PROJECT_PATH/docs/overview.md"
-	then
+		"$PROJECT_PATH/docs/overview.md"; then
 		print_error "Unable to create the initial project files."
 		return 1
 	fi
@@ -860,8 +855,7 @@ setup_remote_repository() {
 	fi
 
 	if [[ "$REPOSITORY_VISIBILITY" != "public" &&
-	      "$REPOSITORY_VISIBILITY" != "private" ]]
-	then
+		"$REPOSITORY_VISIBILITY" != "private" ]]; then
 		print_error "Repository visibility was not resolved."
 		return 1
 	fi
@@ -873,8 +867,7 @@ setup_remote_repository() {
 			"$PROJECT_NAME" \
 			--source="$PROJECT_PATH" \
 			"$visibility_option" \
-			--remote=origin
-		then
+			--remote=origin; then
 			print_error "Unable to plan GitHub repository creation."
 			return 1
 		fi
@@ -908,8 +901,7 @@ setup_remote_repository() {
 		"$PROJECT_NAME" \
 		--source="$PROJECT_PATH" \
 		"$visibility_option" \
-		--remote=origin
-	then
+		--remote=origin; then
 		print_error "Unable to create the GitHub repository."
 		return 1
 	fi
@@ -1025,8 +1017,7 @@ create_feature_branch() {
 	if git -C "$PROJECT_PATH" show-ref \
 		--verify \
 		--quiet \
-		"refs/heads/$FEATURE_BRANCH"
-	then
+		"refs/heads/$FEATURE_BRANCH"; then
 		if ! run_cmd git -C "$PROJECT_PATH" switch "$FEATURE_BRANCH"; then
 			print_error "Unable to switch to feature branch: $FEATURE_BRANCH"
 			return 1

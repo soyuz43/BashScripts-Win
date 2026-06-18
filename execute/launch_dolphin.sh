@@ -27,10 +27,10 @@ game=""
 if ! game=$(
 	find "$GAMES_DIR" -type f \
 		\( \
-			-iname "*.iso" -o \
-			-iname "*.gcm" -o \
-			-iname "*.ciso" -o \
-			-iname "*.rvz" \
+		-iname "*.iso" -o \
+		-iname "*.gcm" -o \
+		-iname "*.ciso" -o \
+		-iname "*.rvz" \
 		\) |
 		sort |
 		sed "s|^$GAMES_DIR/||" |
