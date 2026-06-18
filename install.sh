@@ -32,6 +32,7 @@ readonly -a PACKAGES=(
 	"Visual Studio Code|code|Microsoft.VisualStudioCode|vscode|vscode"
 	"Windows Terminal|wt|Microsoft.WindowsTerminal|windows-terminal|microsoft-windows-terminal"
 	"PowerToys|powertoys|Microsoft.PowerToys|powertoys|powertoys"
+	"G-Helper|GHelper|seerge.g-helper|g-helper|g-helper"
 
 	"Firefox Developer Edition|firefox|Mozilla.Firefox.DeveloperEdition|firefox-developer-edition|firefox-developer-edition"
 	"Mullvad VPN|mullvad|MullvadVPN.MullvadVPN|mullvad-vpn|mullvad-vpn"

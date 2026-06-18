@@ -38,8 +38,10 @@
 #   ├── vscode/
 #   │   ├── settings.json
 #   │   └── extensions.txt
-#   └── windows-terminal/
-#       └── settings.json
+#   ├── windows-terminal/
+#   │   └── settings.json
+#   └── ghelper/
+#       └── config.json
 #
 # Optional environment overrides:
 #   DOTFILES_DIR
@@ -80,6 +82,10 @@ POWERSHELL_BIN=""
 CODE_BIN=""
 TEMP_DIR=""
 RUN_TIMESTAMP=""
+
+GHELPER_SETTINGS_TARGET=""
+GHELPER_DIR=""
+GHELPER_CONFIG_SOURCE=""
 
 CURRENT_LABEL=""
 CURRENT_SOURCE=""
@@ -165,7 +171,8 @@ usage() {
 		"  ~/.wslconfig" \
 		"  VS Code settings.json" \
 		"  VS Code extensions" \
-		"  Windows Terminal settings.json"
+		"  Windows Terminal settings.json" \
+		"  G-Helper settings"
 }
 
 choose_mode() {
@@ -440,6 +447,33 @@ detect_windows_terminal_settings_target() {
 		"$local_app_data_unix/Packages/Microsoft.WindowsTerminal_8wekyb3d8bbwe/LocalState/settings.json"
 }
 
+detect_ghelper_settings_target() {
+	local app_data
+	local app_data_unix
+	local target
+
+	app_data="${APPDATA:-}"
+	app_data_unix=""
+	target=""
+
+	if [[ -z "$app_data" ]] || has_control_characters "$app_data"; then
+		return 1
+	fi
+
+	if ! app_data_unix="$(to_unix_path "$app_data")"; then
+		return 1
+	fi
+
+	target="$app_data_unix/GHelper/config.json"
+
+	if [[ -e "$target" || -d "${target%/*}" ]]; then
+		printf '%s' "$target"
+		return 0
+	fi
+
+	return 1
+}
+
 # ---------- Runtime initialization ----------
 initialize_paths() {
 	if [[ -z "${HOME:-}" ]]; then
@@ -477,10 +511,23 @@ initialize_paths() {
 		return 1
 	fi
 
+	if ! GHELPER_SETTINGS_TARGET="$(detect_ghelper_settings_target)"; then
+		GHELPER_SETTINGS_TARGET=""
+	fi
+
+	if [[ -n "$GHELPER_SETTINGS_TARGET" ]] &&
+		! validate_path \
+			"G-Helper settings target" \
+			"$GHELPER_SETTINGS_TARGET"; then
+		return 1
+	fi
+
 	VSCODE_DIR="$DOTFILES_DIR/vscode"
 	VSCODE_SETTINGS_SOURCE="$VSCODE_DIR/settings.json"
 	VSCODE_EXTENSIONS_SOURCE="$VSCODE_DIR/extensions.txt"
 	WINDOWS_TERMINAL_SETTINGS_SOURCE="$DOTFILES_DIR/windows-terminal/settings.json"
+	GHELPER_DIR="$DOTFILES_DIR/ghelper"
+	GHELPER_CONFIG_SOURCE="$GHELPER_DIR/config.json"
 
 	MANAGED_FILES=(
 		"Bash configuration|$DOTFILES_DIR/bashrc|$HOME/.bashrc|required"
@@ -493,6 +540,12 @@ initialize_paths() {
 	if [[ -n "$WINDOWS_TERMINAL_SETTINGS_TARGET" ]]; then
 		MANAGED_FILES+=(
 			"Windows Terminal settings|$WINDOWS_TERMINAL_SETTINGS_SOURCE|$WINDOWS_TERMINAL_SETTINGS_TARGET|optional"
+		)
+	fi
+
+	if [[ -n "$GHELPER_SETTINGS_TARGET" ]]; then
+		MANAGED_FILES+=(
+			"G-Helper settings|$GHELPER_CONFIG_SOURCE|$GHELPER_SETTINGS_TARGET|optional"
 		)
 	fi
 }
@@ -1766,6 +1819,7 @@ mode_capture() {
 		"$DOTFILES_DIR" \
 		"$VSCODE_DIR" \
 		"${WINDOWS_TERMINAL_SETTINGS_SOURCE%/*}" \
+		"$DOTFILES_DIR/ghelper" \
 		"$DOTFILES_DIR/inventory" \
 		"$DOTFILES_DIR/inventory/browsers"; then
 		err "Unable to create the required dotfiles directories."
@@ -1892,6 +1946,12 @@ main() {
 		info "Windows Terminal target: $WINDOWS_TERMINAL_SETTINGS_TARGET"
 	else
 		warn "Windows Terminal target could not be determined."
+	fi
+
+	if [[ -n "$GHELPER_SETTINGS_TARGET" ]]; then
+		info "G-Helper settings target: $GHELPER_SETTINGS_TARGET"
+	else
+		warn "G-Helper settings target could not be determined."
 	fi
 
 	case "$MODE" in
