@@ -484,6 +484,7 @@ initialize_paths() {
 
 	MANAGED_FILES=(
 		"Bash configuration|$DOTFILES_DIR/bashrc|$HOME/.bashrc|required"
+		"PowerShell profile|$DOTFILES_DIR/powershell/profile.ps1|$HOME/Documents/PowerShell/profile.ps1|optional"
 		"Git configuration|$DOTFILES_DIR/gitconfig|$HOME/.gitconfig|optional"
 		"WSL configuration|$DOTFILES_DIR/wslconfig|$HOME/.wslconfig|optional"
 		"VS Code settings|$VSCODE_SETTINGS_SOURCE|$VSCODE_SETTINGS_TARGET|optional"
@@ -1534,6 +1535,222 @@ print_restore_summary() {
 	printf '  Skipped:             %d\n' "$RESTORE_SKIPPED_COUNT"
 	printf '  Failed:              %d\n' "$RESTORE_FAILED_COUNT"
 }
+# ------ Inventory Capture ----------
+
+capture_inventory() {
+	local inventory_dir
+	local failed
+
+	inventory_dir="$DOTFILES_DIR/inventory"
+	failed=0
+
+	section "Capture lightweight machine inventory"
+
+	if ! mkdir -p -- "$inventory_dir/browsers"; then
+		err "Unable to create inventory directory: $inventory_dir"
+		return 1
+	fi
+
+	if ! capture_package_list "$inventory_dir/packages.txt"; then
+		failed=$((failed + 1))
+	fi
+
+	if ! capture_wsl_summary "$inventory_dir/wsl.txt"; then
+		failed=$((failed + 1))
+	fi
+
+	if ! capture_windows_summary "$inventory_dir/windows.txt"; then
+		failed=$((failed + 1))
+	fi
+
+	if ! capture_browser_summary "$inventory_dir/browsers"; then
+		failed=$((failed + 1))
+	fi
+
+	if ((failed > 0)); then
+		err "$failed lightweight inventory capture group(s) failed."
+		return 1
+	fi
+
+	ok "Lightweight machine inventory captured."
+}
+
+capture_package_list() {
+	local output_file
+
+	output_file="$1"
+
+	{
+		printf '## winget\n'
+		if command -v winget >/dev/null 2>&1; then
+			winget list 2>/dev/null || true
+		else
+			printf 'winget unavailable\n'
+		fi
+
+		printf '\n## scoop\n'
+		if command -v scoop >/dev/null 2>&1; then
+			scoop list 2>/dev/null || true
+		else
+			printf 'scoop unavailable\n'
+		fi
+
+		printf '\n## chocolatey\n'
+		if command -v choco >/dev/null 2>&1; then
+			choco list 2>/dev/null || true
+		else
+			printf 'chocolatey unavailable\n'
+		fi
+	} >"$output_file"
+}
+
+capture_wsl_summary() {
+	local output_file
+
+	output_file="$1"
+
+	{
+		printf '## wsl --list --verbose\n'
+		if command -v wsl.exe >/dev/null 2>&1; then
+			wsl.exe --list --verbose 2>/dev/null || true
+
+			printf '\n## wsl --status\n'
+			wsl.exe --status 2>/dev/null || true
+		else
+			printf 'wsl.exe unavailable\n'
+		fi
+	} >"$output_file"
+}
+
+capture_windows_summary() {
+	local output_file
+
+	output_file="$1"
+
+	{
+		printf '## systeminfo\n'
+		if command -v systeminfo >/dev/null 2>&1; then
+			systeminfo 2>/dev/null || true
+		else
+			printf 'systeminfo unavailable\n'
+		fi
+
+		printf '\n## user environment\n'
+		if command -v powershell.exe >/dev/null 2>&1; then
+			powershell.exe -NoProfile -Command \
+				"[Environment]::GetEnvironmentVariables('User').GetEnumerator() | Sort-Object Name | Format-Table -AutoSize" \
+				2>/dev/null || true
+		else
+			printf 'powershell.exe unavailable\n'
+		fi
+	} >"$output_file"
+}
+
+capture_browser_summary() {
+	local browser_dir
+	local failed
+
+	browser_dir="$1"
+	failed=0
+
+	if ! capture_firefox_dev_summary "$browser_dir/firefox-dev-edition.txt"; then
+		failed=$((failed + 1))
+	fi
+
+	if ! capture_ungoogled_chromium_summary "$browser_dir/ungoogled-chromium.txt"; then
+		failed=$((failed + 1))
+	fi
+
+	if ((failed > 0)); then
+		return 1
+	fi
+}
+
+capture_firefox_dev_summary() {
+	local output_file
+	local firefox_root
+	local firefox_root_unix
+
+	output_file="$1"
+	firefox_root=""
+	firefox_root_unix=""
+
+	if [[ -n "${APPDATA:-}" ]] && ! has_control_characters "$APPDATA"; then
+		if firefox_root_unix="$(to_unix_path "$APPDATA")"; then
+			firefox_root="$firefox_root_unix/Mozilla/Firefox"
+		fi
+	fi
+
+	{
+		printf '## Firefox Developer Edition\n'
+
+		if [[ -z "$firefox_root" || ! -d "$firefox_root" ]]; then
+			printf 'Firefox profile root not found\n'
+			return 0
+		fi
+
+		printf '\n## profile root\n%s\n' "$firefox_root"
+
+		printf '\n## profile metadata files\n'
+		find "$firefox_root" -maxdepth 1 -type f \
+			\( -name 'profiles.ini' -o -name 'installs.ini' \) \
+			-print 2>/dev/null || true
+
+		printf '\n## profiles\n'
+		find "$firefox_root" -maxdepth 1 -type d \
+			\( -name '*.dev-edition-default*' -o -name '*.default-release*' -o -name '*.default*' \) \
+			-printf '%f\n' 2>/dev/null | sort || true
+
+		printf '\n## extension files/directories\n'
+		find "$firefox_root" -maxdepth 3 \
+			\( -path '*/extensions/*' -o -path '*/extensions.json' \) \
+			-print 2>/dev/null | sort || true
+	} >"$output_file"
+}
+
+capture_ungoogled_chromium_summary() {
+	local output_file
+	local chromium_root
+	local localappdata_unix
+
+	output_file="$1"
+	chromium_root=""
+	localappdata_unix=""
+
+	if [[ -n "${LOCALAPPDATA:-}" ]] && ! has_control_characters "$LOCALAPPDATA"; then
+		if localappdata_unix="$(to_unix_path "$LOCALAPPDATA")"; then
+			chromium_root="$localappdata_unix/Chromium/User Data"
+		fi
+	fi
+
+	{
+		printf '## Ungoogled Chromium\n'
+
+		if [[ -z "$chromium_root" || ! -d "$chromium_root" ]]; then
+			printf 'Chromium profile root not found\n'
+			return 0
+		fi
+
+		printf '\n## profile root\n%s\n' "$chromium_root"
+
+		printf '\n## profiles\n'
+		find "$chromium_root" -maxdepth 1 -type d \
+			\( -name 'Default' -o -name 'Profile *' \) \
+			-printf '%f\n' 2>/dev/null | sort || true
+
+		printf '\n## extension ids\n'
+		find "$chromium_root" -maxdepth 3 -type d -path '*/Extensions/*' \
+			-printf '%f\n' 2>/dev/null | sort -u || true
+
+		printf '\n## local state\n'
+		if [[ -f "$chromium_root/Local State" ]]; then
+			printf 'Local State exists\n'
+		else
+			printf 'Local State not found\n'
+		fi
+	} >"$output_file"
+}
+
 
 # ---------- Modes ----------
 mode_capture() {
@@ -1549,7 +1766,9 @@ mode_capture() {
 		-- \
 		"$DOTFILES_DIR" \
 		"$VSCODE_DIR" \
-		"${WINDOWS_TERMINAL_SETTINGS_SOURCE%/*}"; then
+		"${WINDOWS_TERMINAL_SETTINGS_SOURCE%/*}" \
+		"$DOTFILES_DIR/inventory" \
+		"$DOTFILES_DIR/inventory/browsers"; then
 		err "Unable to create the required dotfiles directories."
 		return 1
 	fi
@@ -1562,6 +1781,10 @@ mode_capture() {
 		failed=$((failed + 1))
 	fi
 
+	if ! capture_inventory; then
+		failed=$((failed + 1))
+	fi
+
 	print_capture_summary
 
 	if ((failed > 0 || CAPTURE_FAILED_COUNT > 0)); then
@@ -1570,14 +1793,19 @@ mode_capture() {
 	fi
 
 	ok "Dotfiles capture complete."
-	printf '\n%s\n' \
-		"Repository files:" \
-		"  $DOTFILES_DIR/bashrc" \
-		"  $DOTFILES_DIR/gitconfig" \
-		"  $DOTFILES_DIR/wslconfig" \
-		"  $VSCODE_SETTINGS_SOURCE" \
-		"  $VSCODE_EXTENSIONS_SOURCE" \
-		"  $WINDOWS_TERMINAL_SETTINGS_SOURCE"
+	section "Repository files"
+	
+	if command -v tree >/dev/null 2>&1 &&
+		tree --version 2>&1 | grep -q '^tree v'; then
+		tree -a -I '.git' --noreport "$DOTFILES_DIR"
+	else
+		warn "GNU tree is unavailable; using find instead."
+	
+		find "$DOTFILES_DIR" \
+			-path "$DOTFILES_DIR/.git" -prune -o \
+			-type f -printf '  %P\n' |
+			LC_ALL=C sort
+	fi
 }
 
 mode_restore() {
