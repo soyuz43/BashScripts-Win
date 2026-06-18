@@ -28,8 +28,18 @@ readonly DOTFILES_REPO_SSH_URL="ssh://git@github.com/soyuz43/dotfiles-WIN.git"
 readonly -a PACKAGES=(
 	"Git|git|Git.Git|git|git"
 	"GitHub CLI|gh|GitHub.cli|gh|gh"
+
 	"Visual Studio Code|code|Microsoft.VisualStudioCode|vscode|vscode"
 	"Windows Terminal|wt|Microsoft.WindowsTerminal|windows-terminal|microsoft-windows-terminal"
+	"PowerToys|powertoys|Microsoft.PowerToys|powertoys|powertoys"
+
+	"Firefox Developer Edition|firefox|Mozilla.Firefox.DeveloperEdition|firefox-developer-edition|firefox-developer-edition"
+	"Mullvad VPN|mullvad|MullvadVPN.MullvadVPN|mullvad-vpn|mullvad-vpn"
+
+	"Steam|steam|Valve.Steam|steam|steam"
+
+	"7-Zip|7z|7zip.7zip|7zip|7zip"
+	"Everything Search|everything|voidtools.Everything|everything|everything"
 	"fzf|fzf|junegunn.fzf|fzf|fzf"
 	"ripgrep|rg|BurntSushi.ripgrep.MSVC|ripgrep|ripgrep"
 	"fd|fd|sharkdp.fd|fd|fd"

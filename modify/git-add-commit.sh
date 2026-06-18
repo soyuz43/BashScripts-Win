@@ -135,7 +135,7 @@ review_changes() {
 confirm_commit() {
 	local decision msg trimmed
 
-	read -r -p $'\e[1;33mCommit? [Enter/y = message prompt, n = cancel, or type message]: \e[0m' decision
+	read -r -p $'\e[1;33mCommit? [[y]/N or message]: \e[0m' decision
 	decision=${decision:-y}
 
 	case "$decision" in
@@ -156,8 +156,8 @@ confirm_commit() {
 		trimmed="${msg//[[:space:]]/}"
 
 		if ((${#trimmed} < 5)); then
-			echo -e "\e[1;31mCommit blocked: inline message too short to safely interpret as a commit message.\e[0m"
-			echo -e "\e[1;33mUse Enter or 'y' to enter a short message manually.\e[0m"
+			echo -e "\e[1;31mCommit blocked: message too short to safely interpret.\e[0m"
+			echo -e "\e[1;33mUse Enter or 'y' and enter a short message below.\e[0m"
 			return 1
 		fi
 
