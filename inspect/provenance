@@ -290,7 +290,7 @@ preview_commit() {
 				if (!inserted && line ~ /^commit[[:space:]]/) {
 					printf "\033[1;36mAssociated pull request:\033[0m "
 					printf "\033]8;;%s\033\\", pr_url
-					printf "\033[4;36mOpen pull request #%s\033[0m", pr_number
+					printf "\033[4;36mPull request #%s\033[0m", pr_number
 					printf "\033]8;;\033\\"
 					printf " \033[2m(%s)\033[0m\n", pr_state
 
