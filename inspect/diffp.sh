@@ -9,9 +9,11 @@ DIFFP_INCLUDE_STAGED=true
 DIFFP_INCLUDE_UNSTAGED=true
 DIFFP_INCLUDE_UNTRACKED=true
 DIFFP_COPY_TO_CLIPBOARD=true
+DIFFP_PATH=""
+DIFFP_PATHSPEC=""
 
 print_help() {
-	printf "Usage: diffp [options]\n"
+	printf "Usage: diffp [options] [path]\n"
 	printf "Options:\n"
 	printf "  --staged, -s        Only show staged changes\n"
 	printf "  --unstaged, -u      Only show unstaged changes, including untracked files\n"
@@ -20,6 +22,7 @@ print_help() {
 	printf "  --no-clip, -n       Don't copy to clipboard; print to stdout\n"
 	printf "  --output, -o FILE   Save to FILE instead of clipboard\n"
 	printf "  --help, -h          Show this help\n"
+	printf "  path                Optional directory or file path to limit the diff\n"
 }
 
 validate_git_repo() {
@@ -29,8 +32,48 @@ validate_git_repo() {
 	fi
 }
 
+set_diff_path() {
+	local path="$1"
+
+	if [[ -n "$DIFFP_PATH" ]]; then
+		printf "Error: Only one path argument is allowed\n" >&2
+		return 1
+	fi
+
+	if [[ -z "$path" ]]; then
+		printf "Error: Path argument cannot be empty\n" >&2
+		return 1
+	fi
+
+	DIFFP_PATH="$path"
+}
+
+build_pathspec() {
+	local path="$DIFFP_PATH"
+
+	if [[ -z "$path" ]]; then
+		DIFFP_PATHSPEC=""
+		return
+	fi
+
+	if [[ "$path" == /* ]]; then
+		while [[ "$path" == /* ]]; do
+			path="${path#/}"
+		done
+
+		if [[ -z "$path" ]]; then
+			path="."
+		fi
+
+		DIFFP_PATHSPEC=":(top,literal)$path"
+		return
+	fi
+
+	DIFFP_PATHSPEC=":(literal)$path"
+}
+
 parse_args() {
-	while [[ "$#" -gt 0 ]]; do
+	while (($# > 0)); do
 		case "$1" in
 		--staged | -s)
 			DIFFP_INCLUDE_STAGED=true
@@ -53,29 +96,109 @@ parse_args() {
 			;;
 		--output | -o)
 			shift
+
 			if [[ -z "${1:-}" || "$1" =~ ^- ]]; then
 				printf "Error: --output requires a valid file path\n" >&2
 				return 1
 			fi
+
 			DIFFP_OUTPUT_FILE="$1"
 			;;
 		--help | -h)
 			print_help
 			return 2
 			;;
-		*)
+		--)
+			shift
+
+			while (($# > 0)); do
+				if ! set_diff_path "$1"; then
+					return 1
+				fi
+				shift
+			done
+
+			break
+			;;
+		-*)
 			printf "Error: Unknown option: %s\n" "$1" >&2
 			return 1
 			;;
+		*)
+			if ! set_diff_path "$1"; then
+				return 1
+			fi
+			;;
 		esac
+
 		shift
 	done
+
+	build_pathspec
+}
+
+# Original git diff wrapper (no compaction) – used for --quiet / --stat
+git_diff_no_ext_raw() {
+	local -a extra_args=("$@")
+
+	if [[ -n "$DIFFP_PATHSPEC" ]]; then
+		git diff --no-ext-diff "${extra_args[@]}" -- "$DIFFP_PATHSPEC"
+		return
+	fi
+
+	git diff --no-ext-diff "${extra_args[@]}" --
+}
+
+# Compaction filter: summarises large deletions, detects whole file removal
+compact_diff() {
+	awk '
+	function flush_deletions() {
+		if (deletion_count > 5) {
+			printf "-[%d lines deleted]\n", deletion_count
+		} else {
+			for (i = 0; i < deletion_count; i++) {
+				print "-"
+			}
+		}
+
+		deletion_count = 0
+	}
+
+	BEGIN {
+		deletion_count = 0
+	}
+
+	/^-/ && !/^--- / {
+		deletion_count++
+		next
+	}
+
+	{
+		flush_deletions()
+		print
+	}
+
+	END {
+		flush_deletions()
+	}
+	'
+}
+
+git_ls_untracked() {
+	local -a extra_args=("$@")
+
+	if [[ -n "$DIFFP_PATHSPEC" ]]; then
+		git ls-files --others --exclude-standard "${extra_args[@]}" -- "$DIFFP_PATHSPEC"
+		return
+	fi
+
+	git ls-files --others --exclude-standard "${extra_args[@]}" --
 }
 
 has_untracked_changes() {
-	local untracked
+	local untracked=""
 
-	if ! untracked=$(git ls-files --others --exclude-standard --directory --no-empty-directory); then
+	if ! untracked=$(git_ls_untracked --directory --no-empty-directory); then
 		printf "Error: Failed to inspect untracked files\n" >&2
 		return 2
 	fi
@@ -86,28 +209,30 @@ has_untracked_changes() {
 check_changes() {
 	local has_changes=false
 
-	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]] && ! git diff --no-ext-diff --quiet --; then
+	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]] && ! git_diff_no_ext_raw --quiet; then
 		has_changes=true
 	fi
 
-	if [[ "$DIFFP_INCLUDE_STAGED" == true ]] && ! git diff --no-ext-diff --cached --quiet --; then
+	if [[ "$DIFFP_INCLUDE_STAGED" == true ]] && ! git_diff_no_ext_raw --cached --quiet; then
 		has_changes=true
 	fi
 
-	if [[ "$DIFFP_INCLUDE_UNTRACKED" == true ]]; then
-		if has_untracked_changes; then
-			has_changes=true
-		fi
+	if [[ "$DIFFP_INCLUDE_UNTRACKED" == true ]] && has_untracked_changes; then
+		has_changes=true
 	fi
 
 	if [[ "$has_changes" == false ]]; then
-		printf "No changes to diff\n" >&2
+		if [[ -n "$DIFFP_PATH" ]]; then
+			printf "No changes to diff for path: %s\n" "$DIFFP_PATH" >&2
+		else
+			printf "No changes to diff\n" >&2
+		fi
 		return 1
 	fi
 }
 
 get_branch() {
-	local branch
+	local branch=""
 
 	if ! branch=$(git branch --show-current 2>/dev/null); then
 		printf "Error: Failed to get branch\n" >&2
@@ -124,27 +249,10 @@ get_branch() {
 	printf "%s" "$branch"
 }
 
-sanitize_branch() {
-	local raw="$1"
-	local sanitized
-
-	if ! sanitized=$(printf "%s" "$raw" | sed -E 's/[^a-zA-Z0-9]+/-/g; s/^-+//; s/-+$//' | tr '[:upper:]' '[:lower:]'); then
-		printf "Error: Failed to sanitize branch\n" >&2
-		return 1
-	fi
-
-	if [[ -z "${sanitized//[[:space:]]/}" ]]; then
-		printf "Error: Sanitized branch empty\n" >&2
-		return 1
-	fi
-
-	printf "%s" "$sanitized"
-}
-
 build_untracked_stat() {
-	local files
+	local files=""
 
-	if ! files=$(git ls-files --others --exclude-standard); then
+	if ! files=$(git_ls_untracked); then
 		printf "Error: Failed untracked stat\n" >&2
 		return 1
 	fi
@@ -161,20 +269,22 @@ build_stat() {
 	local untracked=""
 
 	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]]; then
-		if ! unstaged=$(git diff --no-ext-diff --stat --); then
+		if ! unstaged=$(git_diff_no_ext_raw --stat); then
 			printf "Error: Failed unstaged stat\n" >&2
 			return 1
 		fi
+
 		if [[ -n "${unstaged//[[:space:]]/}" ]]; then
 			stat+="Unstaged:"$'\n'"$unstaged"$'\n'
 		fi
 	fi
 
 	if [[ "$DIFFP_INCLUDE_STAGED" == true ]]; then
-		if ! staged=$(git diff --no-ext-diff --cached --stat --); then
+		if ! staged=$(git_diff_no_ext_raw --cached --stat); then
 			printf "Error: Failed staged stat\n" >&2
 			return 1
 		fi
+
 		if [[ -n "${staged//[[:space:]]/}" ]]; then
 			stat+="Staged:"$'\n'"$staged"$'\n'
 		fi
@@ -184,6 +294,7 @@ build_stat() {
 		if ! untracked=$(build_untracked_stat); then
 			return 1
 		fi
+
 		if [[ -n "${untracked//[[:space:]]/}" ]]; then
 			stat+="$untracked"
 		fi
@@ -194,8 +305,10 @@ build_stat() {
 
 read_untracked_files() {
 	local -n files_ref="$1"
-	# shellcheck disable=SC2034
-	if ! mapfile -d '' -t files_ref < <(git ls-files -z --others --exclude-standard); then
+
+	files_ref=()
+	# shellcheck disable=SC2034  # false positive: nameref used by caller
+	if ! mapfile -d '' -t files_ref < <(git_ls_untracked -z); then
 		printf "Error: Failed to read untracked files\n" >&2
 		return 1
 	fi
@@ -214,7 +327,7 @@ diff_untracked_file() {
 	file_diff=$(git diff --no-ext-diff --no-index -- /dev/null "$file" 2>/dev/null)
 	status=$?
 
-	if [[ "$status" -gt 1 ]]; then
+	if ((status > 1)); then
 		printf "Error: Failed untracked diff for: %s\n" "$file" >&2
 		return 1
 	fi
@@ -231,17 +344,16 @@ build_untracked_diff() {
 	local -a files=()
 	local file=""
 	local part=""
-	local output=""
 
 	if ! read_untracked_files files; then
 		return 1
 	fi
 
-	if [[ "${#files[@]}" -eq 0 ]]; then
+	if ((${#files[@]} == 0)); then
 		return
 	fi
 
-	output+=$'\n\nUntracked files:\n'
+	printf '\n\nUntracked files:\n'
 
 	for file in "${files[@]}"; do
 		if [[ -z "$file" ]]; then
@@ -252,63 +364,16 @@ build_untracked_diff() {
 			return 1
 		fi
 
-		output+=$'\n'"$part"$'\n'
+		printf '\n%s\n' "$part"
 	done
-
-	printf "%s" "$output"
-}
-
-build_diff() {
-	local diff=""
-	local unstaged=""
-	local staged=""
-	local untracked=""
-
-	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]]; then
-		if ! unstaged=$(git diff --no-ext-diff --); then
-			printf "Error: Failed unstaged diff\n" >&2
-			return 1
-		fi
-		if [[ -n "${unstaged//[[:space:]]/}" ]]; then
-			diff+=$'\n\nUnstaged changes:\n'"$unstaged"
-		fi
-	fi
-
-	if [[ "$DIFFP_INCLUDE_STAGED" == true ]]; then
-		if ! staged=$(git diff --no-ext-diff --cached --); then
-			printf "Error: Failed staged diff\n" >&2
-			return 1
-		fi
-		if [[ -n "${staged//[[:space:]]/}" ]]; then
-			diff+=$'\n\nStaged changes:\n'"$staged"
-		fi
-	fi
-
-	if [[ "$DIFFP_INCLUDE_UNTRACKED" == true ]]; then
-		if ! untracked=$(build_untracked_diff); then
-			return 1
-		fi
-		if [[ -n "${untracked//[[:space:]]/}" ]]; then
-			diff+="$untracked"
-		fi
-	fi
-
-	printf "%s" "$diff"
 }
 
 build_output() {
+	local outfile="$1"
 	local branch=""
-	local sanitized=""
 	local stat=""
-	local diff=""
-	local timestamp=""
-	local output=""
 
 	if ! branch=$(get_branch); then
-		return 1
-	fi
-
-	if ! sanitized=$(sanitize_branch "$branch"); then
 		return 1
 	fi
 
@@ -316,23 +381,14 @@ build_output() {
 		return 1
 	fi
 
-	if ! diff=$(build_diff); then
-		return 1
-	fi
-
-	if ! timestamp=$(date '+%Y-%m-%d %H:%M:%S'); then
-		printf "Error: Failed to create timestamp\n" >&2
-		return 1
-	fi
-
-	output=$(
-		cat <<EOF
+	# Write header (static template with dynamic branch/timestamp)
+	cat >"$outfile" <<EOF
 You are reviewing a git diff. Operate as a strict, signal-maximizing reviewer.
 
 ## Context
 - Workflow: new → bet → pr
 - Branch: $branch
-- Timestamp: $timestamp
+- Timestamp: $(date '+%Y-%m-%d %H:%M:%S')
 - bet guarantees:
   - formatting/linting already applied where configured
   - generated files are blocked
@@ -383,159 +439,140 @@ BLOCKED: Critical bugs must be fixed before creating a PR
   - Proceed with full output format below
 
 ## Output Rules (STRICT)
-- Be informative, then concise
-- Prioritize high-signal insights over completeness
-- No filler or redundant statements
-- Each bullet must add new, non-obvious information
-- Max 6 bullets per section
-- Use dense phrasing (compress after conveying meaning)
-- Order bugs by severity (critical → minor)
-- Bugs MUST be included in the PR body when Decision = "ALLOW" (do not omit or summarize away)
-- If Bugs section is not "None", they must be copied into PR Body verbatim (compressed allowed)
-- The Decision section is authoritative:
-  - "BLOCK" → no further output allowed
-  - "ALLOW" → full output required
+
+- The Decision is required, but it is not the entire response.
+- Output exactly one complete format: BLOCK or ALLOW.
+- Never output only \`BLOCK\` or only \`ALLOW\`.
+- Use every required heading exactly as shown and in the listed order.
+- Do not add preambles, extra sections, or trailing commentary.
+- Be concise and high-signal; max 6 top-level bullets per section.
+- Order bugs by severity: critical → high → medium → low.
+- Do not use placeholders, pseudocode, ellipses, or incomplete fixes.
+
+### Required BLOCK Format
+
+### Decision
+BLOCK
+
+### Explanation
+- 1–3 bullets summarizing the change and blocking risk
+
+### Critical Bugs (BLOCKING)
+- [critical] <specific bug and consequence>
+  - Why: <exact failure mode>
+  - Location: <file and function, symbol, or diff hunk>
+  - Existing code:
+    \`\`\`<language>
+    <exact code copied from the diff>
+    \`\`\`
+  - Replace with:
+    \`\`\`<language>
+    <complete copy-pasteable replacement>
+    \`\`\`
+
+### Additional Bugs
+- [high]/[medium] findings in the same format, or \`None\`
+
+### Fix Suggestions
+- Provide a minimal consolidated patch when related edits are required
+- For insertions, show an exact existing anchor and state whether to insert before or after it
+- Include required imports, declarations, type changes, and call-site updates
+
+### Status
+BLOCKED: Critical bugs must be fixed before creating a PR
+
+For BLOCK:
+- Include at least one critical bug.
+- Never include Branch Name, Commit Message, PR Body, or PR Command.
+- Copy existing code exactly from the diff; do not invent surrounding code.
+- Fixes must be complete, valid, and directly copy-pasteable.
+- If the diff lacks enough context for an exact fix, state precisely what context is missing instead of fabricating code.
+
+### Required ALLOW Format
+
+### Decision
+ALLOW
+
+### Explanation
+- 1–3 bullets summarizing the change and review result
+
+### Bugs
+- \`None\`, or severity-tagged non-blocking bugs
+
+### PR Body
+<complete PR body>
+
+### Branch Name
+\`\`\`text
+new <recommended-branch-name>
+\`\`\`
+
+### Commit Message
+\`\`\`text
+<commit message only>
+\`\`\`
+
+### PR Command
+\`\`\`sh
+<complete executable gh pr create command>
+\`\`\`
+
+For ALLOW:
+- Include every section above; never output only \`ALLOW\`.
+- Branch Name must be exactly one shell command using the \`new\` alias followed by the recommended branch name.
+- Branch Name must not use \`git switch\`, \`git checkout\`, or any other Git command.
+- Commit Message must contain only the commit message; do not include \`git commit\` or any shell command.
+- PR Command must contain only a complete executable \`gh pr create\` command.
+- Do not add a branch or head argument to the PR command unless required by the reviewed workflow.
+- If Bugs is not \`None\`, copy every bug into the PR body without omitting its severity, location, or consequence.
+
+Before responding, silently verify:
+- The selected format is complete.
+- BLOCK contains at least one critical bug and no branch, commit, or PR output.
+- ALLOW contains PR Body, Branch Name, Commit Message, and PR Command.
+- Branch Name begins with \`new \` and contains no Git command.
+- Commit Message contains no command.
+- PR Command is an executable \`gh pr create\` command.
 
 ## Files Changed
 \`\`\`
 $stat
 \`\`\`
 
-## Required Output
-
-### Explanation
-- 1–3 bullets summarizing what changed and why it matters
-
-### Bugs
-For EACH bug, use EXACT structure:
-
-- [critical|high|medium] <issue>
-
-  - Location:
-    File: <file path>
-    Symbol: <function | method | class | block name>
-
-  - Why:
-    <root cause + impact in 1–2 lines>
-
-  - Existing Code:
-\`\`\`<language>
-<copy the relevant existing code EXACTLY as it appears in the diff>
-\`\`\`
-
-  - Replacement (FULL BLOCK — copy/paste ready):
-\`\`\`<language>
-<complete corrected version of the code above — no omissions, no placeholders>
-\`\`\`
-
-  - Notes:
-    <edge cases / assumptions / alternatives (optional)>
-
-- "None" if no issues
-
-Rules:
-- MUST include Location (File + Symbol)
-- Symbol MUST be specific (function name, method, or clearly described block)
-- MUST include BOTH "Existing Code" and "Replacement"
-- Replacement MUST be a FULL, self-contained snippet (no "...", no omissions)
-- Replacement MUST be directly copy-pasteable into the file
-- Replacement MUST be complete enough to compile/run without additional edits
-- DO NOT output diff-style code (+/-)
-- DO NOT describe fixes without code
-- Prefer replacing entire logical units (function/block) over partial edits
-- If the fix affects multiple locations, include multiple full replacements
-- Use the SAME language as the diff
-- Existing Code MUST match or be directly derived from the diff (no fabrication)
-- If exact existing code is not shown, infer the smallest valid enclosing block and include it fully
-- Replacement MUST be complete enough to compile/run without requiring additional edits
-- Default to minimal, localized replacements; escalate to full function/class replacement only when the fix spans multiple lines or affects control flows
-
-### Branch
-\`\`\`bash
-new wrs/<feature|bug|chore>-<description>
-\`\`\`
-
-### Commit Message
-\`\`\`text
-<imperative, ≤72 chars, no period>
-\`\`\`
-
-### PR Command
-\`\`\`bash
-gh pr create --title "<same as commit>" --body "<structured body>"
-\`\`\`
-
-## PR Body Format (STRICT)
-Summary:
-- 3–6 bullets ONLY (no prose blocks)
-- Each bullet MUST follow: <change> → <why> → <impact>
-- Prioritize behavioral changes, regressions, and user-visible effects first; structural/internal changes last
-- MUST incorporate (not repeat verbatim) key points from Explanation
-- NO vague phrasing (e.g., "improved", "refactored", "updated") without specifying what and why
-- Each bullet must be information-dense, non-redundant, and ≤30 words
-
-Changes:
-- 3–6 bullets, each a distinct concrete change (WHAT only; no why/impact)
-- MUST NOT duplicate Summary bullets verbatim
-- Use precise, implementation-level language
-
-Bugs:
-- MUST mirror Bugs section above (verbatim or compressed, no loss of meaning)
-- Preserve severity labels (critical/high/medium)
-- "None" if no issues
-
-Notes:
-- Optional; include only risks, edge cases, or follow-ups NOT already covered
-- No repetition of Summary or Bugs
-
-## Example Output (REFERENCE — STRUCTURE ONLY)
-
----
-Summary:
-- [change → why → impact; behavioral/user-visible; ≤30 words; no vague terms]
-- [change → why → impact; include regression or risk if applicable; ≤30 words]
-- [change → why → impact; structural/internal if lower priority; ≤30 words]
-
-Changes:
-- [specific implementation change (WHAT only; no why/impact)]
-- [distinct code-level modification; precise and non-redundant]
-- [additional concrete change if applicable]
-
-Bugs:
-- [critical/high/medium] [concise issue description]
-- ["None" if no issues]
-
-Notes:
-- [optional: risks, edge cases, follow-ups not already covered; omit section if none]
-
----
-
-## Additional Constraints
-- Prefer minimal, safe changes over cleverness
-- Preserve backward compatibility unless clearly intentional
-- Follow the conventions of the language(s) in the diff
-- Flag silent failure risks and missing error handling
-- Highlight unsafe or non-idiomatic patterns even if they pass linters
-- Use github CLI ('gh') to create PR
-- The PR command must be shell-safe.
-- Escape ALL backticks using \`
-- Escape ALL double quotes using \"
-- Escape ALL dollar signs using \$
-- Do NOT use unescaped backticks, quotes, or shell expansions inside the PR body
-
 ## Diff
-$diff
 EOF
-	)
 
-	printf "%s" "$output"
+	# Append the actual diffs (compacted) directly to the file
+	if [[ "$DIFFP_INCLUDE_UNSTAGED" == true ]]; then
+		{
+			printf '\n\nUnstaged changes:\n'
+			git_diff_no_ext_raw | compact_diff
+		} >>"$outfile" || {
+			printf "Error: Failed unstaged diff\n" >&2
+			return 1
+		}
+	fi
+
+	if [[ "$DIFFP_INCLUDE_STAGED" == true ]]; then
+		{
+			printf '\n\nStaged changes:\n'
+			git_diff_no_ext_raw --cached | compact_diff
+		} >>"$outfile" || {
+			printf "Error: Failed staged diff\n" >&2
+			return 1
+		}
+	fi
+
+	if [[ "$DIFFP_INCLUDE_UNTRACKED" == true ]]; then
+		build_untracked_diff >>"$outfile" || return 1
+	fi
 }
 
 write_output() {
-	local content="$1"
+	local src="$1"
 
 	if [[ -n "${DIFFP_OUTPUT_FILE//[[:space:]]/}" ]]; then
-		if ! printf "%s\n" "$content" >"$DIFFP_OUTPUT_FILE"; then
+		if ! cp "$src" "$DIFFP_OUTPUT_FILE"; then
 			printf "Error: Failed to write file: %s\n" "$DIFFP_OUTPUT_FILE" >&2
 			return 1
 		fi
@@ -545,30 +582,35 @@ write_output() {
 
 	if [[ "$DIFFP_COPY_TO_CLIPBOARD" == true ]]; then
 		if command -v iconv >/dev/null 2>&1 && command -v clip.exe >/dev/null 2>&1; then
-			if ! printf "%s" "$content" | iconv -f UTF-8 -t UTF-16LE | clip.exe; then
+			if ! {
+				printf '\xff\xfe'
+				iconv -f UTF-8 -t UTF-16LE <"$src"
+			} | clip.exe; then
 				printf "Error: Clipboard copy failed\n" >&2
 				return 1
 			fi
 			printf "[OK] Copied to clipboard\n"
 			return
 		fi
-
 		printf "Error: Clipboard tools missing; use --no-clip or --output FILE\n" >&2
 		return 1
 	fi
 
-	printf "%s\n" "$content"
+	cat "$src"
 }
 
 main() {
-	local output=""
+	local parse_status=0
+	local tmpfile=""
 
-	if ! parse_args "$@"; then
-		case "$?" in
-		2) return 0 ;;
-		*) return 1 ;;
-		esac
-	fi
+	parse_args "$@"
+	parse_status=$?
+
+	case "$parse_status" in
+	0) ;;
+	2) return ;;
+	*) return 1 ;;
+	esac
 
 	if ! validate_git_repo; then
 		return 1
@@ -578,11 +620,19 @@ main() {
 		return 1
 	fi
 
-	if ! output=$(build_output); then
+	tmpfile=$(mktemp) || {
+		printf "Error: Could not create temporary file\n" >&2
+		return 1
+	}
+	trap 'rm -f "$tmpfile"' EXIT
+
+	if ! build_output "$tmpfile"; then
 		return 1
 	fi
 
-	write_output "$output"
+	if ! write_output "$tmpfile"; then
+		return 1
+	fi
 }
 
 main "$@"
