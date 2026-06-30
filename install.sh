@@ -532,7 +532,7 @@ initialize_paths() {
 
 	REPO_DIR="$script_dir"
 	DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
-	DOTFILES_MANAGER="${DOTFILES_MANAGER:-$REPO_DIR/dotfiles-manager.sh}"
+	DOTFILES_MANAGER="${DOTFILES_MANAGER:-$REPO_DIR/modify/dotfiles-manager.sh}"
 
 	if ! validate_path_value "Dotfiles directory" "$DOTFILES_DIR"; then
 		return 1
