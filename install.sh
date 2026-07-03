@@ -26,21 +26,16 @@ readonly DOTFILES_REPO_HTTPS="https://github.com/soyuz43/dotfiles-WIN.git"
 readonly DOTFILES_REPO_SSH_URL="ssh://git@github.com/soyuz43/dotfiles-WIN.git"
 
 readonly -a PACKAGES=(
+	# ---------- Core Git / developer shell ----------
 	"Git|git|Git.Git|git|git"
 	"GitHub CLI|gh|GitHub.cli|gh|gh"
+	"Git LFS|git-lfs|GitHub.GitLFS|git-lfs|git-lfs"
 
+	# ---------- Editors / terminals ----------
 	"Visual Studio Code|code|Microsoft.VisualStudioCode|vscode|vscode"
 	"Windows Terminal|wt|Microsoft.WindowsTerminal|windows-terminal|microsoft-windows-terminal"
-	"PowerToys|powertoys|Microsoft.PowerToys|powertoys|powertoys"
-	"G-Helper|GHelper|seerge.g-helper|g-helper|g-helper"
 
-	"Firefox Developer Edition|firefox|Mozilla.Firefox.DeveloperEdition|firefox-developer-edition|firefox-developer-edition"
-	"Mullvad VPN|mullvad|MullvadVPN.MullvadVPN|mullvad-vpn|mullvad-vpn"
-
-	"Steam|steam|Valve.Steam|steam|steam"
-
-	"7-Zip|7z|7zip.7zip|7zip|7zip"
-	"Everything Search|everything|voidtools.Everything|everything|everything"
+	# ---------- CLI search / file / text tools ----------
 	"fzf|fzf|junegunn.fzf|fzf|fzf"
 	"ripgrep|rg|BurntSushi.ripgrep.MSVC|ripgrep|ripgrep"
 	"fd|fd|sharkdp.fd|fd|fd"
@@ -48,11 +43,28 @@ readonly -a PACKAGES=(
 	"delta|delta|dandavison.delta|delta|delta"
 	"jq|jq|jqlang.jq|jq|jq"
 	"tree|tree|GnuWin32.Tree|tree|tree"
+
+	# ---------- Shell / script quality tools ----------
 	"shfmt|shfmt|mvdan.shfmt|shfmt|shfmt"
 	"ShellCheck|shellcheck|koalaman.shellcheck|shellcheck|shellcheck"
-	"Git LFS|git-lfs|GitHub.GitLFS|git-lfs|git-lfs"
+
+	# ---------- Language runtimes ----------
 	"Node.js LTS|node|OpenJS.NodeJS.LTS|nodejs-lts|nodejs-lts"
 	"Python|python|Python.Python.3.12|python|python"
+
+	# ---------- Archive / filesystem utilities ----------
+	"7-Zip|7z|7zip.7zip|7zip|7zip"
+
+	# ---------- GUI desktop utilities ----------
+	"PowerToys|powertoys|Microsoft.PowerToys|powertoys|powertoys"
+	"G-Helper|ghelper|seerge.g-helper|g-helper|g-helper"
+
+	# ---------- Browsers / network / privacy ----------
+	"Firefox Developer Edition|firefox|Mozilla.Firefox.DeveloperEdition|firefox-developer-edition|firefox-developer-edition"
+	"Mullvad VPN|mullvad|MullvadVPN.MullvadVPN|mullvad-vpn|mullvad-vpn"
+
+	# ---------- Gaming platforms ----------
+	"Steam|steam|Valve.Steam|steam|steam"
 )
 
 readonly -a REQUIRED_CORE_COMMANDS=(
@@ -80,7 +92,6 @@ COMMAND_SEQUENCE=0
 WINGET_BIN=""
 SCOOP_BIN=""
 CHOCO_BIN=""
-PYTHON_BIN=""
 
 CURRENT_DISPLAY=""
 CURRENT_COMMAND=""
@@ -702,11 +713,6 @@ augment_package_paths() {
 	prepend_path_directory "$chocolatey_root/bin"
 	prepend_path_directory "$HOME/.local/bin"
 
-	if [[ -n "${PIPX_BIN_DIR:-}" ]] &&
-		converted="$(to_unix_path "$PIPX_BIN_DIR")"; then
-		prepend_path_directory "$converted"
-	fi
-
 	if [[ -n "$program_files" ]] &&
 		! has_control_characters "$program_files" &&
 		program_files_unix="$(to_unix_path "$program_files")"; then
@@ -760,55 +766,21 @@ resolve_package_managers() {
 	fi
 }
 
-resolve_python() {
-	PYTHON_BIN=""
+winget_package_installed() {
+	local package_id
 
-	if ! PYTHON_BIN="$(
-		resolve_first_command python python.exe py py.exe python3
-	)"; then
-		PYTHON_BIN=""
+	package_id="$1"
+
+	[[ -n "$WINGET_BIN" ]] || return 1
+
+	if ! validate_identifier "Winget package identifier" "$package_id"; then
 		return 1
 	fi
-}
 
-augment_python_user_paths() {
-	local converted
-	local scripts_path
-
-	converted=""
-	scripts_path=""
-
-	if ! resolve_python; then
-		return 0
-	fi
-
-	if scripts_path="$(
-		"$PYTHON_BIN" -c '
-import sys
-import sysconfig
-
-scheme = "nt_user" if sys.platform == "win32" else sysconfig.get_preferred_scheme("user")
-print(sysconfig.get_path("scripts", scheme=scheme))
-' 2>/dev/null
-	)"; then
-		scripts_path="${scripts_path//$'\r'/}"
-
-		if [[ -n "$scripts_path" ]] &&
-			converted="$(to_unix_path "$scripts_path")"; then
-			prepend_path_directory "$converted"
-		fi
-	fi
-
-	prepend_path_directory "$HOME/.local/bin"
-
-	if [[ -n "${PIPX_BIN_DIR:-}" ]] &&
-		converted="$(to_unix_path "$PIPX_BIN_DIR")"; then
-		prepend_path_directory "$converted"
-	fi
-
-	if ! hash -r 2>/dev/null; then
-		verbose "The shell command cache could not be refreshed."
-	fi
+	"$WINGET_BIN" list \
+		--id "$package_id" \
+		--exact \
+		--disable-interactivity >/dev/null 2>&1
 }
 
 # ---------- Command logging ----------
@@ -1306,14 +1278,22 @@ run_package_action() {
 
 	if [[ "$requested_action" == "install" ]] &&
 		has_cmd "$CURRENT_COMMAND"; then
-		ok "$CURRENT_DISPLAY is already available."
+		ok "$CURRENT_DISPLAY is already installed and available on PATH."
+		PACKAGE_ALREADY_PRESENT_COUNT=$((PACKAGE_ALREADY_PRESENT_COUNT + 1))
+		return 0
+	fi
+
+	if [[ "$requested_action" == "install" ]] &&
+		winget_package_installed "$CURRENT_WINGET_PACKAGE"; then
+		ok "$CURRENT_DISPLAY is already installed according to Winget; '$CURRENT_COMMAND' is not on PATH."
 		PACKAGE_ALREADY_PRESENT_COUNT=$((PACKAGE_ALREADY_PRESENT_COUNT + 1))
 		return 0
 	fi
 
 	if [[ "$requested_action" == "upgrade" ]] &&
-		! has_cmd "$CURRENT_COMMAND"; then
-		warn "$CURRENT_DISPLAY is missing; switching this package from upgrade to install."
+		! has_cmd "$CURRENT_COMMAND" &&
+		! winget_package_installed "$CURRENT_WINGET_PACKAGE"; then
+		warn "$CURRENT_DISPLAY is not detected; switching this package from upgrade to install."
 		effective_action="install"
 	fi
 
@@ -1387,131 +1367,6 @@ reset_package_outcomes() {
 	PATH_PENDING_PACKAGES=()
 	SKIPPED_PACKAGES=()
 	SKIPPED_REASONS=()
-}
-
-# ---------- Python-managed dependencies ----------
-python_pipx_module_available() {
-	if [[ -z "$PYTHON_BIN" ]] && ! resolve_python; then
-		return 1
-	fi
-
-	"$PYTHON_BIN" -m pipx --version >/dev/null 2>&1
-}
-
-record_pipx_failure() {
-	local reason
-
-	reason="$1"
-	err "$reason"
-	record_named_skipped_package "pipx" "$reason"
-}
-
-ensure_pipx() {
-	local action
-	local diagnostic
-	local install_required
-
-	action="$1"
-	diagnostic=""
-	install_required=0
-
-	case "$action" in
-	install | upgrade) ;;
-	*)
-		err "Unsupported pipx action: $action"
-		return 1
-		;;
-	esac
-
-	section "pipx"
-	augment_package_paths
-	augment_python_user_paths
-
-	if ! resolve_python; then
-		if package_waiting_for_path_refresh "Python"; then
-			warn "Python was installed but is not visible in this Git Bash session."
-			warn "pipx installation is deferred until the next run."
-			record_named_pending_path_package "pipx"
-			return 0
-		fi
-
-		record_pipx_failure "Python is unavailable; pipx cannot be installed."
-		return 0
-	fi
-
-	if [[ "$action" == "install" ]] && has_cmd pipx; then
-		ok "pipx is already available."
-		PACKAGE_ALREADY_PRESENT_COUNT=$((PACKAGE_ALREADY_PRESENT_COUNT + 1))
-		return 0
-	fi
-
-	if python_pipx_module_available; then
-		if [[ "$action" == "upgrade" ]]; then
-			install_required=1
-		fi
-	else
-		if has_cmd pipx; then
-			ok "pipx is available through an external package manager; leaving it unchanged."
-			PACKAGE_ALREADY_PRESENT_COUNT=$((PACKAGE_ALREADY_PRESENT_COUNT + 1))
-			return 0
-		fi
-
-		install_required=1
-	fi
-
-	if ((install_required != 0)); then
-		if ! "$PYTHON_BIN" -m pip --version >/dev/null 2>&1; then
-			info "Python pip is unavailable; attempting to initialize it with ensurepip."
-
-			if ! run_logged_capture "$PYTHON_BIN" -m ensurepip --upgrade; then
-				if ! diagnostic="$(last_nonempty_line "$CAPTURED_OUTPUT")"; then
-					diagnostic="No diagnostic output was returned."
-				fi
-
-				record_pipx_failure "Unable to initialize pip. Diagnostic: $diagnostic"
-				return 0
-			fi
-		fi
-
-		info "Installing pipx through the active Python interpreter."
-
-		if ! run_logged_capture \
-			"$PYTHON_BIN" -m pip install --user --upgrade pipx; then
-			if ! diagnostic="$(last_nonempty_line "$CAPTURED_OUTPUT")"; then
-				diagnostic="No diagnostic output was returned."
-			fi
-
-			record_pipx_failure "Python could not install pipx. Diagnostic: $diagnostic"
-			return 0
-		fi
-	fi
-
-	if ! run_logged_capture "$PYTHON_BIN" -m pipx ensurepath; then
-		warn "pipx is installed, but its persistent PATH update could not be confirmed."
-		record_named_pending_path_package "pipx"
-	else
-		augment_python_user_paths
-	fi
-
-	PACKAGE_COMPLETED_COUNT=$((PACKAGE_COMPLETED_COUNT + 1))
-
-	if has_cmd pipx; then
-		ok "pipx is available in this Git Bash session."
-		return 0
-	fi
-
-	if python_pipx_module_available; then
-		warn "pipx is installed, but the 'pipx' command is not visible in this shell yet."
-		warn "A new Git Bash session may be required."
-
-		if ! package_waiting_for_path_refresh "pipx"; then
-			record_named_pending_path_package "pipx"
-		fi
-
-		return 0
-	fi
-
-	record_pipx_failure "pipx installation completed without producing a usable module or command."
 }
 
 # ---------- Winget availability ----------
@@ -1655,77 +1510,22 @@ cmd_version() {
 	esac
 }
 
-print_pipx_status() {
-	local path
-	local version
-
-	path=""
-	version=""
-
-	augment_python_user_paths
-
-	if has_cmd pipx; then
-		if ! path="$(cmd_path pipx)"; then
-			path="path unavailable"
-		fi
-
-		if ! version="$(cmd_version pipx)"; then
-			version="version unavailable"
-		fi
-
-		printf '%-16s %b%-10s%b %s | %s\n' \
-			"pipx" \
-			"$GREEN" \
-			"AVAILABLE" \
-			"$RESET" \
-			"$path" \
-			"$version"
-		return 0
-	fi
-
-	if resolve_python && python_pipx_module_available; then
-		if ! version="$("$PYTHON_BIN" -m pipx --version 2>/dev/null)"; then
-			version="version unavailable"
-		fi
-
-		if ! version="$(sanitize_inline "$version")"; then
-			version="version unavailable"
-		fi
-
-		printf '%-16s %b%-10s%b %s | %s\n' \
-			"pipx" \
-			"$YELLOW" \
-			"MODULE" \
-			"$RESET" \
-			"$PYTHON_BIN -m pipx" \
-			"$version"
-		return 0
-	fi
-
-	printf '%-16s %b%-10s%b %s\n' \
-		"pipx" \
-		"$YELLOW" \
-		"MISSING" \
-		"$RESET" \
-		"Installed through Python pip during maintenance or bootstrap"
-}
-
 print_dependency_status() {
 	local record
 	local path
 	local version
 	local details
 
-	printf '%b%-16s %-10s %s%b\n' \
+	printf '%b%-16s %-22s %s%b\n' \
 		"$BOLD" \
 		"Command" \
 		"Status" \
 		"Details" \
 		"$RESET"
 
-	printf '%-16s %-10s %s\n' \
+	printf '%-16s %-22s %s\n' \
 		"────────────────" \
-		"──────────" \
+		"──────────────────────" \
 		"────────────────────────────────────────"
 
 	for record in "${PACKAGES[@]}"; do
@@ -1746,27 +1546,30 @@ print_dependency_status() {
 				version="version unavailable"
 			fi
 
-			details="$path | $version"
+			details="Shell command available at: $path | $version"
 
-			printf '%-16s %b%-10s%b %s\n' \
+			printf '%-16s %b%-22s%b %s\n' \
 				"$CURRENT_COMMAND" \
 				"$GREEN" \
-				"AVAILABLE" \
+				"READY_ON_PATH" \
 				"$RESET" \
 				"$details"
+		elif winget_package_installed "$CURRENT_WINGET_PACKAGE"; then
+			printf '%-16s %b%-22s%b Winget installed package found: %s; shell command is not on PATH\n' \
+				"$CURRENT_COMMAND" \
+				"$BLUE" \
+				"INSTALLED_BY_WINGET" \
+				"$RESET" \
+				"$CURRENT_WINGET_PACKAGE"
 		else
-			printf '%-16s %b%-10s%b Winget ID: %s\n' \
+			printf '%-16s %b%-22s%b No shell command or Winget installed package detected. Winget ID: %s\n' \
 				"$CURRENT_COMMAND" \
 				"$YELLOW" \
-				"MISSING" \
+				"NOT_DETECTED" \
 				"$RESET" \
 				"$CURRENT_WINGET_PACKAGE"
 		fi
 	done
-
-	if ! print_pipx_status; then
-		return 1
-	fi
 
 	if [[ -n "$WINGET_BIN" ]]; then
 		version=""
@@ -1779,20 +1582,19 @@ print_dependency_status() {
 			version="version unavailable"
 		fi
 
-		printf '%-16s %b%-10s%b %s | %s\n' \
+		printf '%-16s %b%-22s%b Shell command available at: %s | %s\n' \
 			"winget" \
 			"$GREEN" \
-			"AVAILABLE" \
+			"READY_ON_PATH" \
 			"$RESET" \
 			"$WINGET_BIN" \
 			"$version"
 	else
-		printf '%-16s %b%-10s%b %s\n' \
+		printf '%-16s %b%-22s%b Winget command was not found on PATH\n' \
 			"winget" \
 			"$YELLOW" \
-			"MISSING" \
-			"$RESET" \
-			"Not found on PATH"
+			"NOT_DETECTED" \
+			"$RESET"
 	fi
 }
 
@@ -1813,10 +1615,6 @@ run_install_missing() {
 			return 1
 		fi
 	done
-
-	if ! ensure_pipx "install"; then
-		return 1
-	fi
 }
 
 run_upgrade_known() {
@@ -1843,10 +1641,6 @@ run_upgrade_known() {
 			return 1
 		fi
 	done
-
-	if ! ensure_pipx "upgrade"; then
-		return 1
-	fi
 }
 
 print_package_outcome_summary() {
