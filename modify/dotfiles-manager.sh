@@ -450,11 +450,9 @@ detect_windows_terminal_settings_target() {
 detect_ghelper_settings_target() {
 	local app_data
 	local app_data_unix
-	local target
 
 	app_data="${APPDATA:-}"
 	app_data_unix=""
-	target=""
 
 	if [[ -z "$app_data" ]] || has_control_characters "$app_data"; then
 		return 1
@@ -464,14 +462,7 @@ detect_ghelper_settings_target() {
 		return 1
 	fi
 
-	target="$app_data_unix/GHelper/config.json"
-
-	if [[ -e "$target" || -d "${target%/*}" ]]; then
-		printf '%s' "$target"
-		return 0
-	fi
-
-	return 1
+	printf '%s' "$app_data_unix/GHelper/config.json"
 }
 
 # ---------- Runtime initialization ----------
@@ -1681,18 +1672,57 @@ capture_windows_summary() {
 	output_file="$1"
 
 	{
-		printf '## systeminfo\n'
-		if command -v systeminfo >/dev/null 2>&1; then
-			systeminfo 2>/dev/null || true
+		printf '## windows summary\n'
+		if command -v powershell.exe >/dev/null 2>&1; then
+			# PowerShell variables must remain literal until powershell.exe evaluates them.
+			# shellcheck disable=SC2016
+			powershell.exe -NoProfile -Command '
+				$computer = Get-CimInstance Win32_ComputerSystem
+				$os = Get-CimInstance Win32_OperatingSystem
+				$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+
+				"Host Name: $env:COMPUTERNAME"
+				"OS Name: $($os.Caption)"
+				"OS Version: $($os.Version) Build $($os.BuildNumber)"
+				"System Manufacturer: $($computer.Manufacturer)"
+				"System Model: $($computer.Model)"
+				"System Type: $($computer.SystemType)"
+				"Processor: $($cpu.Name)"
+				"Total Physical Memory MB: $([math]::Round($computer.TotalPhysicalMemory / 1MB))"
+				"Virtualization Firmware Enabled: $($computer.HypervisorPresent)"
+			' 2>/dev/null || true
 		else
-			printf 'systeminfo unavailable\n'
+			printf 'powershell.exe unavailable\n'
 		fi
 
-		printf '\n## user environment\n'
+		printf '\n## selected user environment\n'
 		if command -v powershell.exe >/dev/null 2>&1; then
-			powershell.exe -NoProfile -Command \
-				"[Environment]::GetEnvironmentVariables('User').GetEnumerator() | Sort-Object Name | Format-Table -AutoSize" \
-				2>/dev/null || true
+			# PowerShell variables must remain literal until powershell.exe evaluates them.
+			# shellcheck disable=SC2016
+			powershell.exe -NoProfile -Command '
+				$names = @(
+					"APPDATA",
+					"LOCALAPPDATA",
+					"ProgramFiles",
+					"ProgramFiles(x86)",
+					"ProgramData",
+					"USERPROFILE",
+					"USERNAME",
+					"OneDrive"
+				)
+
+				foreach ($name in $names) {
+					$value = [Environment]::GetEnvironmentVariable($name, "User")
+
+					if ([string]::IsNullOrWhiteSpace($value)) {
+						$value = [Environment]::GetEnvironmentVariable($name, "Process")
+					}
+
+					if (-not [string]::IsNullOrWhiteSpace($value)) {
+						"{0}={1}" -f $name, $value
+					}
+				}
+			' 2>/dev/null || true
 		else
 			printf 'powershell.exe unavailable\n'
 		fi
