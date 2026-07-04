@@ -40,6 +40,15 @@ mapfile -d '' files < <(
 		-o -name "*.pt" \) \
 		! -path "*/.git/*" \
 		! -path "*/node_modules/*" \
+		! -path "*/venv/*" \
+	    ! -path "*/.venv/*" \
+	    ! -path "*/__pycache__/*" \
+	    ! -path "*/dist/*" \
+	    ! -path "*/build/*" \
+	    ! -path "*/target/*" \
+	    ! -path "*/.idea/*" \
+	    ! -path "*/.vscode/*" \
+	    ! -path "*/coverage/*" \
 		-print0 | sort -z
 )
 
