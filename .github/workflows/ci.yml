@@ -1,0 +1,165 @@
+name: BashScripts CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          files=()
+
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(
+            find . \
+              -path './.git' -prune -o \
+              -path './.github' -prune -o \
+              -type f \( \
+                -name '*.sh' -o \
+                -name '*.bash' \
+              \) \
+              -print0
+          )
+
+          for file in \
+            ./create/issue-branch \
+            ./inspect/genealogy \
+            ./inspect/provenance; do
+            if [[ -f "$file" ]]; then
+              files+=("$file")
+            fi
+          done
+
+          if ((${#files[@]} == 0)); then
+            echo "No shell files found."
+            exit 0
+          fi
+
+          printf 'ShellCheck files:\n'
+          printf '  %s\n' "${files[@]}"
+
+          shellcheck --shell=bash "${files[@]}"
+
+  bash-syntax:
+    name: Bash syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Run bash syntax checks
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          files=()
+
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(
+            find . \
+              -path './.git' -prune -o \
+              -path './.github' -prune -o \
+              -type f \( \
+                -name '*.sh' -o \
+                -name '*.bash' \
+              \) \
+              -print0
+          )
+
+          for file in \
+            ./create/issue-branch \
+            ./inspect/genealogy \
+            ./inspect/provenance; do
+            if [[ -f "$file" ]]; then
+              files+=("$file")
+            fi
+          done
+
+          if ((${#files[@]} == 0)); then
+            echo "No bash files found."
+            exit 0
+          fi
+
+          for file in "${files[@]}"; do
+            printf 'Checking %s\n' "$file"
+            bash -n "$file"
+          done
+
+  powershell-syntax:
+    name: PowerShell syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Parse PowerShell scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $files = @(
+            "inspect/concatenate_code.ps1"
+          ) | Where-Object { Test-Path $_ }
+
+          if ($files.Count -eq 0) {
+            Write-Host "No PowerShell files found."
+            exit 0
+          }
+
+          foreach ($file in $files) {
+            Write-Host "Parsing $file"
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+
+            if ($errors.Count -gt 0) {
+              $errors | Format-List | Out-String | Write-Error
+              exit 1
+            }
+          }
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_ENABLE_SUMMARY: "false"
