@@ -500,7 +500,27 @@ ALLOW
 - \`None\`, or severity-tagged non-blocking bugs
 
 ### PR Body
-<complete PR body>
+<complete PR body using the repository PR-body convention below>
+
+The PR Body must use this exact internal format:
+
+Summary:
+
+- <1–6 bullets summarizing user-facing value and behavioral impact>
+
+Changes:
+
+- <1–6 bullets listing concrete implementation changes>
+
+Bugs:
+
+- None
+
+If non-blocking bugs exist, replace \`None\` with severity-tagged bullets:
+- [low] <issue, location, and consequence>
+- [medium] <issue, location, and consequence>
+
+Do not use \`### Explanation\`, \`### Bugs\`, \`Review result\`, \`Review result:\`, or any review-output headings inside the PR Body.
 
 ### Branch Name
 \`\`\`text
@@ -524,6 +544,8 @@ For ALLOW:
 - Commit Message must contain only the commit message; do not include \`git commit\` or any shell command.
 - PR Command must contain only a complete executable \`gh pr create\` command.
 - Do not add a branch or head argument to the PR command unless required by the reviewed workflow.
+- The PR Body section must follow the repository convention exactly: \`Summary:\`, \`Changes:\`, \`Bugs:\`.
+- Do not mirror the outer review headings inside the PR Body.
 - If Bugs is not \`None\`, copy every bug into the PR body without omitting its severity, location, or consequence.
 
 Before responding, silently verify:
