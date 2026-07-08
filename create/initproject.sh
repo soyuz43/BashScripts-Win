@@ -755,13 +755,49 @@ create_structure() {
 		LOCAL_PROJECT_CREATED=1
 	fi
 
+	# Create empty placeholder files
 	if ! run_cmd touch -- \
 		"$PROJECT_PATH/README.md" \
-		"$PROJECT_PATH/.gitignore" \
 		"$PROJECT_PATH/LICENSE" \
 		"$PROJECT_PATH/docs/overview.md"; then
 		print_error "Unable to create the initial project files."
 		return 1
+	fi
+
+	# Write default .gitignore content (provided by user)
+	if ((DRY_RUN)); then
+		print_info "Would write default .gitignore content."
+	else
+		cat > "$PROJECT_PATH/.gitignore" <<'GITIGNORE_EOF'
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Patterns and generated files
+diff.txt
+/*.txt
+GITIGNORE_EOF
 	fi
 
 	print_success "Created project directory structure."
