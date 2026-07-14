@@ -1476,6 +1476,10 @@ cmd_version() {
 		printf '%s command available' "$command_name"
 		return 0
 		;;
+	powertoys | ghelper | firefox | mullvad | steam)
+		printf '%s application available' "$command_name"
+		return 0
+		;;
 	shellcheck)
 		if ! output="$("$command_name" --version 2>/dev/null)"; then
 			return 1
